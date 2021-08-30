@@ -1,51 +1,4 @@
 {
-<<<<<<< HEAD
-  "name": "fx-vue-cli",
-  "version": "1.0.1",
-  "description": "",
-  "main": "index.js",
-  "bin": {
-    "fx-vue": "bin/vue.js",
-    "fx-vue-init": "bin/vue-init.js"
-  },
-  "scripts": {
-    "init": "node bin/vue-init.js",
-    "create": "node bin/vue.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "@vue/cli-shared-utils": "^4.5.13",
-    "async": "^3.2.1",
-    "axios": "^0.21.1",
-    "chalk": "^4.1.2",
-    "commander": "^8.1.0",
-    "consolidate": "^0.16.0",
-    "download-git-repo": "^3.0.2",
-    "ejs": "^3.1.6",
-    "execa": "^5.1.1",
-    "fs-extra": "^10.0.0",
-    "globby": "^8.0.1",
-    "handlebars": "^4.0.5",
-    "inquirer": "^8.1.2",
-    "isbinaryfile": "^3.0.2",
-    "lodash.clonedeep": "^4.5.0",
-    "log-symbols": "^5.0.0",
-    "metalsmith": "^2.3.0",
-    "ncp": "^2.0.0",
-    "ora": "^5.4.1",
-    "read-metadata": "^1.0.0",
-    "recast": "^0.20.5",
-    "resolve": "^1.20.0",
-    "rimraf": "^3.0.2",
-    "slash": "^2.0.0",
-    "utils": "^0.3.1",
-    "validate-npm-package-name": "^3.0.0",
-    "yaml-front-matter": "^4.1.1"
-  }
-=======
 	"private": true,
 	"workspaces": [
 		"packages/*"
@@ -66,5 +19,4 @@
 		"rollup-plugin-typescript2": "^0.30.0",
 		"typescript": "^4.3.5"
 	}
->>>>>>> task: init
 }

@@ -6,5 +6,5 @@ const target = 'reactivity'
 
 build(target)
 async function build (target) {
-    await execa('rollup', ['-c', '--environment', `TARGET:${target}`], { stdio: 'inherit' })
+    await execa('rollup', ['-c', '-w', '--environment', `TARGET:${target}`], { stdio: 'inherit' })
 }
