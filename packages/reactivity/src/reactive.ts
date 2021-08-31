@@ -2,7 +2,7 @@ import { isObject } from "@fx-vue/shared"
 import {
     mutableHandlers,
     shallowReactiveHandlers,
-    readonlyHandler,
+    readonlyHandlers,
     shallowReadonlyHandlers
 } from './baseHandlers'
 
@@ -40,7 +40,7 @@ export function shallowReactive (target) {
 
 
 export function readonly (target) {
-    return createReactiveObject(target, true, readonlyHandler)
+    return createReactiveObject(target, true, readonlyHandlers)
 }
 
 
