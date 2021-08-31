@@ -235,5 +235,71 @@ function shallowReadonly(target) {
     return createReactiveObject(target, true, shallowReadonlyHandlers);
 }
 
-export { effect, reactive, readonly, shallowReactive, shallowReadonly };
+function ref(value) {
+    return createRef(value);
+}
+function shallowRef(value) {
+    return createRef(value, true);
+}
+const convert = (value) => isObject(value) ? reactive(value) : value;
+// ref类
+class RefImpl {
+    _rawValue;
+    _shallow;
+    _value;
+    __v_isRef = true;
+    constructor(_rawValue, _shallow = false) {
+        this._rawValue = _rawValue;
+        this._shallow = _shallow;
+        // 如果是浅的, 做一次代理就可以, 但是如果是深度的, 要进行深度代理了, 这里就可以用reactive了
+        this._value = _shallow ? _rawValue : convert(_rawValue);
+    }
+    // ref类的属性访问器
+    get value() {
+        track(this, "get" /* GET */, 'value');
+        return this._value;
+    }
+    // 通过代理 在实现触发依赖
+    set value(newVal) {
+        // 如果发生了改变
+        if (hasChanged(newVal, this._rawValue)) {
+            // 进行赋值
+            this._rawValue = newVal;
+            this._value = newVal;
+            trigger(this, "set" /* SET */, 'value', newVal);
+        }
+    }
+}
+function createRef(rawValue, shallow = false) {
+    return new RefImpl(rawValue, shallow);
+}
+class ObjectRefImpl {
+    _object;
+    _key;
+    __v_isRef = true;
+    constructor(_object, _key) {
+        this._object = _object;
+        this._key = _key;
+    }
+    get value() {
+        return this._object[this._key];
+    }
+    set value(newVal) {
+        this._object[this._key] = newVal;
+    }
+}
+// 用来把一个响应式对象的的某个 key 值转换成 ref
+/*
+ *  const obj = reactive({ foo: 1 }) // obj 是响应式数据
+ *  const obj2 = { foo: obj.foo }*
+ *  effect(() => {
+ *      console.log(obj2.foo) // 这里读取 obj2.foo
+ *  })
+ *  obj.foo = 2  // 设置 obj.foo 显然无效
+ */
+function toRef(target, key) {
+    return new ObjectRefImpl(target, key);
+}
+
+export { effect, reactive, readonly, ref, shallowReactive, shallowReadonly, shallowRef, toRef };
 //# sourceMappingURL=reactivity.esm-bundler.js.map
