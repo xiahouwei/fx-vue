@@ -110,4 +110,6 @@ export const camelize = cacheStringFunction(
         return str.replace(camelizeRE, (_, c) => (c ? c.toUpperCase() : ''))
     }
 )
-  
+
+// 判断是否发生变化
+export const hasChanged = (value, oldValue) =>  value !== oldValue && (value === value || oldValue === oldValue)

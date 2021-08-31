@@ -1,6 +1,6 @@
-import { extend, isObject } from "@fx-vue/shared"
-import { track } from "./effect"
-import { TrackOpTypes } from "./operations"
+import { extend, hasChanged, hasOwn, isArray, isIntegerKey, isObject } from "@fx-vue/shared"
+import { track, trigger } from "./effect"
+import { TrackOpTypes, TriggerOpTypes } from "./operations"
 import { reactive, readonly } from "./reactive"
 
 
@@ -35,9 +35,23 @@ const set = createSetter()
 const shallowSet = createSetter(true)
 
 // 生成Setter
-function createSetter (isReadonly = false) {
+function createSetter (shallow = false) {
     return function set (target, key, value, receiver) {
+        // 获取以前的值
+        const oldValue = target[key]
+        // 1.如果是数组,且改变的是下标, 通过判断key 和 数组lenth比 就可以知道是否存在
+        // 2.否则就是对象, 就判断是否是自身的属性
+        const hadKey = isArray(target) && isIntegerKey(key) ? Number(key) < target.length : hasOwn(target, key)
         const result = Reflect.set(target, key, value, receiver)
+        // 区分新增还是修改
+        if (!hadKey) {
+            // 没有key就是新增, 
+            trigger(target, TriggerOpTypes.ADD, key, value)
+        } else if (hasChanged(oldValue, value)) {
+            // 有key就是修改
+            trigger(target, TriggerOpTypes.SET, key, value, oldValue)
+        }
+        // 数据更新时, 通知对应的属性执行effect
         return result
     }
 }
