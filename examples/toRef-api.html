@@ -12,7 +12,9 @@
     <script>
         console.log(VueReactivity)
         let { reactive, effect, ref, shallowRef, toRef } = VueReactivity
-        const obj = reactive({ foo: 1 }) // obj 是响应式数据
+        // obj 是响应式数据
+        const obj = reactive({ foo: 1 })
+        // 通过toRef包装obj的 foo, 这样改变了obj.foo 也会影响到 obj2.foo
         const obj2 = { foo: toRef(obj, 'foo') }
         effect(() => {
             app.innerHTML = obj2.foo.value
