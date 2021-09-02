@@ -14,12 +14,23 @@ export function effect (fn, options:any = {}) {
 	return effect
 }
 
+export function stop (effect) {
+	if (effect.active) {
+		cleanup(effect)
+		if (effect.options.onStop) {
+			effect.options.onStop()
+		}
+		effect.active = false
+	}
+}
+
 // effct依赖收集
 let uid = 0
 
 function creatReactiveEffect (fn, options) {
 	const effect = function () {
 		if (!effectStack.includes(effect)) {
+			cleanup(effect)
 			// 通过入栈, 出栈保证手机effect是正确的, 避免嵌套effect情况下收集错误
 			try {
 				effectStack.push(effect)
@@ -33,14 +44,30 @@ function creatReactiveEffect (fn, options) {
 	}
 	// 唯一标识
 	effect.id = uid++
+	// 是否允许递归调用 默认false
+	effect.allowRecurse = !!options.allowRecurse
 	// 响应式effect标识
 	effect._isEffect = true
+	// effect是否激活 调用stop后, 设置为false
 	effect.active = true
 	// 保存原始函数
 	effect.raw = fn
+	// 持有当前effect的dep数组
+	effect.deps = []
 	// 保存用户属性
 	effect.options = options
 	return effect
+}
+
+// 清除
+function cleanup(effect) {
+	const { deps } = effect
+	if (deps.length) {
+		for (let i = 0; i < deps.length; i++) {
+		deps[i].delete(effect)
+		}
+		deps.length = 0
+	}
 }
 
 // 依赖收集, 让某个对象的属性, 收集它对应的effect
@@ -62,6 +89,9 @@ export function track (target, type, key) {
 	// 这里就是真正收集依赖了
 	if (!dep.has(activeEffect)) {
 		dep.add(activeEffect)
+		// 这里的收集用作clean之用,  deps是array,里面每个元素是dep dep是set, 里面每个元素是effect
+		// 这样清除的时候, 就可以循环deps,然后再把dep里面对应的effect清除掉
+		activeEffect.deps.push(dep)
 	}
 }
 
@@ -83,7 +113,12 @@ export function trigger (
 	const effects = new Set()
 	const add = (effectsAdd) => {
 		if (effectsAdd) {
-			effectsAdd.forEach(effect => effects.add(effect))
+			// 避免死循环
+			effectsAdd.forEach(effect => {
+				if (effect !== activeEffect || effect.allowRecurse) {
+					effects.add(effect)
+				}
+			})
 		}
 	}
 	// 将所有需要执行的effect收集到一起, 然后一起执行
@@ -119,7 +154,13 @@ export function trigger (
 		}
 	}
 	const run = function (effect) {
-		effect()
+		// 如果存在scheduler调度函数, 则执行调度函数, 调度函数内部可能实行effect, 也可能不执行
+		if (effect.options.scheduler) {
+			effect.options.scheduler(effect)
+		} else {
+			// 否则直接执行effect
+			effect()
+		}
 	}
 	// 一起执行
 	effects.forEach(run)

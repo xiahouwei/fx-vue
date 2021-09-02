@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <div id="app"></div>
+    <script src="../node_modules/@fx-vue/reactivity/dist/reactivity.global.js"></script>
+    <script>
+        let { reactive, effect, computed } = VueReactivity
+        let state = reactive({name: 'dg', age: 12, arr: [1, 2, 3]})
+        let age = computed(() => {
+            console.log('ok')
+            return state.age * 2
+        })
+        effect(() => {
+            app.innerHTML = age.value
+        })
+        setTimeout(() => {
+            console.log(age.value)
+            state.age = 2000
+        }, 2000)
+    </script>
+</body>
+</html>

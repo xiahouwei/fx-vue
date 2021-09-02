@@ -6,6 +6,8 @@ Object.defineProperty(exports, '__esModule', { value: true });
 Object.freeze({});
 // 空数组
 Object.freeze([]);
+// 空函数
+const NOOP = () => { };
 // 合并
 const extend = Object.assign;
 // 判断非继承属性
@@ -13,6 +15,8 @@ const hasOwnProperty = Object.prototype.hasOwnProperty;
 const hasOwn = (val = {}, key) => hasOwnProperty.call(val, key);
 // 判断是数组
 const isArray = Array.isArray;
+// 判断是function
+const isFunction = (val) => typeof val === 'function';
 // 判断是string
 const isString = (val) => typeof val === 'string';
 // 判断是对象
@@ -38,6 +42,7 @@ let uid = 0;
 function creatReactiveEffect(fn, options) {
     const effect = function () {
         if (!effectStack.includes(effect)) {
+            cleanup(effect);
             // 通过入栈, 出栈保证手机effect是正确的, 避免嵌套effect情况下收集错误
             try {
                 effectStack.push(effect);
@@ -52,14 +57,29 @@ function creatReactiveEffect(fn, options) {
     };
     // 唯一标识
     effect.id = uid++;
+    // 是否允许递归调用 默认false
+    effect.allowRecurse = !!options.allowRecurse;
     // 响应式effect标识
     effect._isEffect = true;
+    // effect是否激活 调用stop后, 设置为false
     effect.active = true;
     // 保存原始函数
     effect.raw = fn;
+    // 持有当前effect的dep数组
+    effect.deps = [];
     // 保存用户属性
     effect.options = options;
     return effect;
+}
+// 清除
+function cleanup(effect) {
+    const { deps } = effect;
+    if (deps.length) {
+        for (let i = 0; i < deps.length; i++) {
+            deps[i].delete(effect);
+        }
+        deps.length = 0;
+    }
 }
 // 依赖收集, 让某个对象的属性, 收集它对应的effect
 const targetMap = new WeakMap();
@@ -80,6 +100,9 @@ function track(target, type, key) {
     // 这里就是真正收集依赖了
     if (!dep.has(activeEffect)) {
         dep.add(activeEffect);
+        // 这里的收集用作clean之用,  deps是array,里面每个元素是dep dep是set, 里面每个元素是effect
+        // 这样清除的时候, 就可以循环deps,然后再把dep里面对应的effect清除掉
+        activeEffect.deps.push(dep);
     }
 }
 // 触发更新 执行属性对应的effect
@@ -93,7 +116,12 @@ function trigger(target, type, key, newValue, oldValue, oldTarget) {
     const effects = new Set();
     const add = (effectsAdd) => {
         if (effectsAdd) {
-            effectsAdd.forEach(effect => effects.add(effect));
+            // 避免死循环
+            effectsAdd.forEach(effect => {
+                if (effect !== activeEffect || effect.allowRecurse) {
+                    effects.add(effect);
+                }
+            });
         }
     };
     // 将所有需要执行的effect收集到一起, 然后一起执行
@@ -123,7 +151,14 @@ function trigger(target, type, key, newValue, oldValue, oldTarget) {
         }
     }
     const run = function (effect) {
-        effect();
+        // 如果存在scheduler调度函数, 则执行调度函数, 调度函数内部可能实行effect, 也可能不执行
+        if (effect.options.scheduler) {
+            effect.options.scheduler(effect);
+        }
+        else {
+            // 否则直接执行effect
+            effect();
+        }
     };
     // 一起执行
     effects.forEach(run);
@@ -316,6 +351,56 @@ function toRefs(object, key) {
     return ret;
 }
 
+// cpmuted计算属性
+function computed(getterOrOptions) {
+    let getter;
+    let setter;
+    // getterOrOptions参数可能是funciton 或者 对象, 根据传入参数的不同, 设置getter ,setter
+    if (isFunction(getterOrOptions)) {
+        getter = getterOrOptions;
+        setter = NOOP;
+    }
+    else {
+        getter = getterOrOptions.get;
+        setter = getterOrOptions.set;
+    }
+    // 默认第一次执行getter方法
+    let dirty = true;
+    let computed;
+    // 把getter进行effct化, effct执行,就会触发依赖收集
+    let _effect = effect(getter, {
+        // 不立即执行
+        lazy: true,
+        // 当属性依赖的值发生变化, 就会执行scheduler, 同时设置dirty状态
+        scheduler: () => {
+            if (!dirty) {
+                dirty = true;
+                // 触发computed的value属性
+                trigger(computed, "set" /* SET */, 'value');
+            }
+        }
+    });
+    let value;
+    computed = {
+        get value() {
+            // 如果是dirty的, 就执行getter, 然后改变dirty状态, 就实现了computed的惰性特征
+            if (dirty) {
+                // 这里_effect就是返回的getter,执行getter, 把gtter返回的结果赋值给value
+                value = _effect();
+                dirty = false;
+                // 收集computed的value属性
+                track(computed, "get" /* GET */, 'value');
+            }
+            return value;
+        },
+        set value(newValue) {
+            setter(newValue);
+        }
+    };
+    return computed;
+}
+
+exports.computed = computed;
 exports.effect = effect;
 exports.reactive = reactive;
 exports.readonly = readonly;
