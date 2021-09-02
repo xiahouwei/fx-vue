@@ -11,17 +11,20 @@
     <script src="../node_modules/@fx-vue/reactivity/dist/reactivity.global.js"></script>
     <script>
         console.log(VueReactivity)
-        let { reactive, effect, ref, shallowRef, toRef } = VueReactivity
+        let { reactive, effect, ref, shallowRef, toRef, toRefs } = VueReactivity
         // obj 是响应式数据
         const obj = reactive({ foo: 1 })
         // 通过toRef包装obj的 foo, 这样改变了obj.foo 也会影响到 obj2.foo
         const obj2 = { foo: toRef(obj, 'foo') }
+        const obj3 = reactive({ a: 1, b: 2 })
+        const { a, b } = toRefs(obj3)
         effect(() => {
-            app.innerHTML = obj2.foo.value
+            // app.innerHTML = obj2.foo.value
+            app.innerHTML = a.value
         })
 
         setTimeout(() => {
-            obj.foo = 2  
+            obj3.a = 5  
         }, 2000)
     </script>
 </body>

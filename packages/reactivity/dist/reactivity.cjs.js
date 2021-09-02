@@ -277,6 +277,7 @@ class RefImpl {
 function createRef(rawValue, shallow = false) {
     return new RefImpl(rawValue, shallow);
 }
+// toRef实现类
 class ObjectRefImpl {
     _object;
     _key;
@@ -286,9 +287,11 @@ class ObjectRefImpl {
         this._key = _key;
     }
     get value() {
+        // 代理, 外界通过访问value, 代理到原始object对应的属性, 这样不就等于触发了原始object的依赖收集, 注意原对象必须是响应式的
         return this._object[this._key];
     }
     set value(newVal) {
+        // 外界改变value, 同样去改变原始object的属性, 这样就触发了依赖
         this._object[this._key] = newVal;
     }
 }
@@ -301,8 +304,16 @@ class ObjectRefImpl {
  *  })
  *  obj.foo = 2  // 设置 obj.foo 显然无效
  */
-function toRef(target, key) {
-    return new ObjectRefImpl(target, key);
+function toRef(object, key) {
+    return new ObjectRefImpl(object, key);
+}
+function toRefs(object, key) {
+    // object 可能是数组或者对象
+    const ret = isArray(object) ? new Array(object.length) : {};
+    for (let key in object) {
+        ret[key] = toRef(object, key);
+    }
+    return ret;
 }
 
 exports.effect = effect;
@@ -313,4 +324,5 @@ exports.shallowReactive = shallowReactive;
 exports.shallowReadonly = shallowReadonly;
 exports.shallowRef = shallowRef;
 exports.toRef = toRef;
+exports.toRefs = toRefs;
 //# sourceMappingURL=reactivity.cjs.js.map
