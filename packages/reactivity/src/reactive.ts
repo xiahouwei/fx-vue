@@ -6,6 +6,16 @@ import {
     shallowReadonlyHandlers
 } from './baseHandlers'
 
+
+// reactiveflag枚举
+export const enum ReactiveFlags {
+    SKIP = '__v_skip',
+    IS_REACTIVE = '__v_isReactive',
+    IS_READONLY = '__v_isReadonly',
+    RAW = '__v_raw'
+}
+  
+
 // 自动垃圾回收
 const reactiveMap = new WeakMap()
 const readonlyMap = new WeakMap()
