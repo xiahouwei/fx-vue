@@ -2,7 +2,8 @@
 const fs = require('fs')
 const execa = require('execa')
 
-const target = 'reactivity'
+// const target = 'reactivity'
+const target = 'vue'
 
 build(target)
 async function build (target) {

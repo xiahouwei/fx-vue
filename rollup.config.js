@@ -47,4 +47,4 @@ function createConfig (format, output) {
     }
 }
 
-export default options.formats.map(format => createConfig(format, outputConfig[format]))
+export default options.formats.filter(format => !!outputConfig[format]).map(format => createConfig(format, outputConfig[format]))

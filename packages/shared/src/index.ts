@@ -1,6 +1,7 @@
 import { makeMap } from './makeMap'
 export { makeMap }
-
+import { ShapeFlags } from './shapeFlags'
+export { ShapeFlags }
 
 // 空对象
 export const EMPTY_OBJ = Object.freeze({})

@@ -1,0 +1,20 @@
+{
+  "name": "@fx-vue/vue",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "module": "dist/vue.runtime.esm-bundler.js",
+  "license": "MIT",
+  "buildOptions": {
+    "name": "VueShared",
+    "formats": [
+      "esm-bundler",
+      "esm-bundler-runtime",
+      "cjs",
+      "global",
+      "global-runtime",
+      "esm-browser",
+      "esm-browser-runtime"
+    ]
+  }
+}
