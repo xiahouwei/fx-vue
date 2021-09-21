@@ -9,6 +9,7 @@ async function build (target) {
     await execa('rollup', ['-c', '--environment', `TARGET:${target}`], { stdio: 'inherit'})
 }
 
+// 循环执行异步操作, 统一返回执行结果
 function runParallel(targets, iteratorFn) {
     const res = []
     for (const item of targets) {

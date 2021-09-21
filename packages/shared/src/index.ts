@@ -57,6 +57,9 @@ export const isString = (val: unknown): val is string => typeof val === 'string'
 // 判断是symbol
 export const isSymbol = (val: unknown): val is symbol => typeof val === 'symbol'
 
+// 判断是Boolean
+export const isBoolean = (val: unknown): val is boolean => typeof val === 'boolean'
+
 // 判断是对象
 export const isObject = (val: unknown): val is Record<any, any> =>
   val !== null && typeof val === 'object'
@@ -114,3 +117,4 @@ export const camelize = cacheStringFunction(
 
 // 判断是否发生变化
 export const hasChanged = (value, oldValue) =>  value !== oldValue && (value === value || oldValue === oldValue)
+

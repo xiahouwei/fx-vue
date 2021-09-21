@@ -55,6 +55,8 @@ const isFunction = (val) => typeof val === 'function';
 const isString = (val) => typeof val === 'string';
 // 判断是symbol
 const isSymbol = (val) => typeof val === 'symbol';
+// 判断是Boolean
+const isBoolean = (val) => typeof val === 'boolean';
 // 判断是对象
 const isObject = (val) => val !== null && typeof val === 'object';
 // 判断是promise
@@ -107,6 +109,7 @@ exports.extend = extend;
 exports.hasChanged = hasChanged;
 exports.hasOwn = hasOwn;
 exports.isArray = isArray;
+exports.isBoolean = isBoolean;
 exports.isDate = isDate;
 exports.isFunction = isFunction;
 exports.isIntegerKey = isIntegerKey;

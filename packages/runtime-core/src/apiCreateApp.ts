@@ -32,7 +32,7 @@ export function createAppAPI (render) {
 					app._container = rootContainer
 					// 
 					rootContainer.__vue_app__ = app
-					return vnode.component.proxy
+					// return vnode.component.proxy
 				}
 			}
 		})

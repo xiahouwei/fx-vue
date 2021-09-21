@@ -51,6 +51,8 @@ const isFunction = (val) => typeof val === 'function';
 const isString = (val) => typeof val === 'string';
 // 判断是symbol
 const isSymbol = (val) => typeof val === 'symbol';
+// 判断是Boolean
+const isBoolean = (val) => typeof val === 'boolean';
 // 判断是对象
 const isObject = (val) => val !== null && typeof val === 'object';
 // 判断是promise
@@ -94,5 +96,5 @@ const camelize = cacheStringFunction((str) => {
 // 判断是否发生变化
 const hasChanged = (value, oldValue) => value !== oldValue && (value === value || oldValue === oldValue);
 
-export { EMPTY_ARR, EMPTY_OBJ, NO, NOOP, camelize, extend, hasChanged, hasOwn, isArray, isDate, isFunction, isIntegerKey, isMap, isModelListener, isObject, isOn, isPlainObject, isPromise, isReservedProp, isSet, isString, isSymbol, makeMap, objectToString, remove, toRawType, toTypeString };
+export { EMPTY_ARR, EMPTY_OBJ, NO, NOOP, camelize, extend, hasChanged, hasOwn, isArray, isBoolean, isDate, isFunction, isIntegerKey, isMap, isModelListener, isObject, isOn, isPlainObject, isPromise, isReservedProp, isSet, isString, isSymbol, makeMap, objectToString, remove, toRawType, toTypeString };
 //# sourceMappingURL=shared.esm-bundler.js.map

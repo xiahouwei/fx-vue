@@ -44,7 +44,7 @@ export function normalizeChildren (vnode, children) {
     // children为 null / undifined
     if (children == null) {
         children = null
-    } else if (isArray(type)) {
+    } else if (isArray(children)) {
         // children为数组 更新父的shapFlag
         type = ShapeFlags.ARRAY_CHILDREN
     } else if (typeof children === 'object') {
