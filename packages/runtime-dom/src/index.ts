@@ -1,7 +1,9 @@
 import { createRenderer } from '@fx-vue/runtime-core'
-import { isString } from '@fx-vue/shared'
+import { extend, isString } from '@fx-vue/shared'
+import { nodeOps } from './nodeOps'
 
-const rendererOptions = {}
+// nodeOps为各种dom操作api
+const rendererOptions = extend({}, nodeOps)
 
 let renderer
 // 如果存在renderer对象则返回, 否则创建一个返回
@@ -41,3 +43,4 @@ function normalizeContainer (container) {
 }
 
 export * from '@fx-vue/runtime-core'
+export { rendererOptions }

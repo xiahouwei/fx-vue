@@ -86,7 +86,7 @@ function track(target, type, key) {
     // 通过target获取它对应的dep
     let depsMap = targetMap.get(target);
     if (!depsMap) {
-        targetMap.set(target, (depsMap = new Map));
+        targetMap.set(target, (depsMap = new Map()));
     }
     // 通过key收集它对应的dep, dep内就是effect
     let dep = depsMap.get(key);
