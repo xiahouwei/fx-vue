@@ -12,6 +12,26 @@ function makeMap(str, expectsLowerCase) {
     return expectsLowerCase ? val => !!map[val.toLowerCase()] : val => !!map[val];
 }
 
+/**
+ * dev only flag -> name mapping
+ */
+const PatchFlagNames = {
+    [1 /* TEXT */]: `TEXT`,
+    [2 /* CLASS */]: `CLASS`,
+    [4 /* STYLE */]: `STYLE`,
+    [8 /* PROPS */]: `PROPS`,
+    [16 /* FULL_PROPS */]: `FULL_PROPS`,
+    [32 /* HYDRATE_EVENTS */]: `HYDRATE_EVENTS`,
+    [64 /* STABLE_FRAGMENT */]: `STABLE_FRAGMENT`,
+    [128 /* KEYED_FRAGMENT */]: `KEYED_FRAGMENT`,
+    [256 /* UNKEYED_FRAGMENT */]: `UNKEYED_FRAGMENT`,
+    [512 /* NEED_PATCH */]: `NEED_PATCH`,
+    [1024 /* DYNAMIC_SLOTS */]: `DYNAMIC_SLOTS`,
+    [2048 /* DEV_ROOT_FRAGMENT */]: `DEV_ROOT_FRAGMENT`,
+    [-1 /* HOISTED */]: `HOISTED`,
+    [-2 /* BAIL */]: `BAIL`
+};
+
 // 空对象
 const EMPTY_OBJ = Object.freeze({});
 // 空数组
@@ -85,16 +105,54 @@ const cacheStringFunction = (fn) => {
         return hit || (cache[str] = fn(str));
     });
 };
-// 驼峰
+// 烤肉串 => 驼峰
 const camelizeRE = /-(\w)/g;
-/**
- * @private
- */
 const camelize = cacheStringFunction((str) => {
     return str.replace(camelizeRE, (_, c) => (c ? c.toUpperCase() : ''));
 });
+// 驼峰 => 烤肉串
+const hyphenateRE = /\B([A-Z])/g;
+const hyphenate = cacheStringFunction((str) => str.replace(hyphenateRE, '-$1').toLowerCase());
+// 转大写
+const capitalize = cacheStringFunction((str) => str.charAt(0).toUpperCase() + str.slice(1));
+// 转on命名
+const toHandlerKey = cacheStringFunction((str) => (str ? `on${capitalize(str)}` : ``));
 // 判断是否发生变化
 const hasChanged = (value, oldValue) => value !== oldValue && (value === value || oldValue === oldValue);
+// 循环调用函数
+const invokeArrayFns = (fns, arg) => {
+    for (let i = 0; i < fns.length; i++) {
+        fns[i](arg);
+    }
+};
+// defineProperty
+const def = (obj, key, value) => {
+    Object.defineProperty(obj, key, {
+        configurable: true,
+        enumerable: false,
+        value
+    });
+};
+// 转nuber
+const toNumber = (val) => {
+    const n = parseFloat(val);
+    return isNaN(n) ? val : n;
+};
+// 获取全局对象
+let _globalThis;
+const getGlobalThis = () => {
+    return (_globalThis ||
+        (_globalThis =
+            typeof globalThis !== 'undefined'
+                ? globalThis
+                : typeof self !== 'undefined'
+                    ? self
+                    : typeof window !== 'undefined'
+                        ? window
+                        : typeof global !== 'undefined'
+                            ? global
+                            : {}));
+};
 
-export { EMPTY_ARR, EMPTY_OBJ, NO, NOOP, camelize, extend, hasChanged, hasOwn, isArray, isBoolean, isDate, isFunction, isIntegerKey, isMap, isModelListener, isObject, isOn, isPlainObject, isPromise, isReservedProp, isSet, isString, isSymbol, makeMap, objectToString, remove, toRawType, toTypeString };
+export { EMPTY_ARR, EMPTY_OBJ, NO, NOOP, PatchFlagNames, camelize, capitalize, def, extend, getGlobalThis, hasChanged, hasOwn, hyphenate, invokeArrayFns, isArray, isBoolean, isDate, isFunction, isIntegerKey, isMap, isModelListener, isObject, isOn, isPlainObject, isPromise, isReservedProp, isSet, isString, isSymbol, makeMap, objectToString, remove, toHandlerKey, toNumber, toRawType, toTypeString };
 //# sourceMappingURL=shared.esm-bundler.js.map

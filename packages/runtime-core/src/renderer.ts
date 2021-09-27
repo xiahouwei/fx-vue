@@ -295,7 +295,9 @@ function remove(vnode) {
 	}
 
 	// 删除元素
-	renderApi.hostRemove(el)
+	if (el) {
+		renderApi.hostRemove(el)
+	}
 }
 
 // 删除传送门元素
