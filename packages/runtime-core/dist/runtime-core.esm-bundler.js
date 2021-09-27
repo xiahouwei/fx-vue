@@ -1,5 +1,19 @@
+/*
+ * 创建一个 map 并且返回一个 function,  function接受一个参数key, 用来检查是否存在于map中
+ * 重要: 所有调用这个function必须是\/\*#\_\_PURE\_\_\*\/前缀
+ * 作用是给rollup用来tree-shake, 即没用到则不需要打包
+ */
+function makeMap(str, expectsLowerCase) {
+    const map = Object.create(null);
+    const list = str.split(',');
+    for (let i = 0; i < list.length; i++) {
+        map[list[i]] = true;
+    }
+    return expectsLowerCase ? val => !!map[val.toLowerCase()] : val => !!map[val];
+}
+
 // 空对象
-Object.freeze({});
+const EMPTY_OBJ = Object.freeze({});
 // 空数组
 Object.freeze([]);
 // 空函数
@@ -16,6 +30,13 @@ const isString = (val) => typeof val === 'string';
 const isBoolean = (val) => typeof val === 'boolean';
 // 判断是对象
 const isObject = (val) => val !== null && typeof val === 'object';
+// 是否为vue关键字
+const isReservedProp = /*#__PURE__*/ makeMap(
+// 前导逗号是有意为之的，因此空字符串""也包含在内  
+',key,ref,' +
+    'onVnodeBeforeMount,onVnodeMounted,' +
+    'onVnodeBeforeUpdate,onVnodeUpdated,' +
+    'onVnodeBeforeUnmount,onVnodeUnmounted');
 
 const Fragment = Symbol('Fragment');
 const Text = Symbol('Text');
@@ -194,8 +215,58 @@ const nodeOps = {
     }
 };
 
+const domPropsRE = /[A-Z]|^(value|checked|selected|muted|disabled)$/;
+const patchProp = (el, key, prevValue, nextValue) => {
+    switch (key) {
+        case 'class':
+            el.className = nextValue || '';
+            break;
+        case 'style':
+            for (const styleName in nextValue) {
+                el.style[styleName] = nextValue[styleName];
+            }
+            if (prevValue) {
+                for (const styleName in prevValue) {
+                    if (nextValue[styleName] == null) {
+                        el.style[styleName] = '';
+                    }
+                }
+            }
+            break;
+        default:
+            if (/^on[^a-z]/.test(key)) {
+                const eventName = key.slice(2).toLowerCase();
+                if (prevValue) {
+                    el.removeEventListener(eventName, prevValue);
+                }
+                if (nextValue) {
+                    el.addEventListener(eventName, nextValue);
+                }
+            }
+            else if (domPropsRE.test(key)) {
+                // value|checked|selected|muted|disabled 这几种属性直接在dom上赋值
+                if (nextValue === '' && isBoolean(el[key])) {
+                    nextValue = true;
+                }
+                el[key] = nextValue;
+            }
+            else {
+                // 剩下的属性使用attr的api进行操作
+                if (nextValue == null || nextValue === false) {
+                    el.removeAttribute(key);
+                }
+                else {
+                    el.setAttribute(key, nextValue);
+                }
+            }
+            break;
+    }
+};
+
 // nodeOps为各种dom操作api
-const rendererOptions = extend({}, nodeOps);
+const rendererOptions = extend({
+    patchProp
+}, nodeOps);
 
 let uid = 0;
 // 返回createApp函数
@@ -279,7 +350,9 @@ function initRenderApi(options) {
             // 克隆节点
             hostCloneNode: options.cloneNode,
             // 插入模板节点
-            hostInsertStaticContent: options.insertStaticContent
+            hostInsertStaticContent: options.insertStaticContent,
+            // patch属性
+            hostPatchProp: options.patchProp
         };
     }
     return renderApi;
@@ -371,7 +444,7 @@ function processElement(n1, n2, container, anchor, parentComponent) {
         mountElement(n2, container, anchor, parentComponent);
     }
     else {
-        patchElement(n1, n2);
+        patchElement(n1, n2, container, anchor, parentComponent);
     }
 }
 // 处理传送门节点
@@ -385,7 +458,7 @@ function processFragment(n1, n2, container, anchor, parentComponent) {
         mountChildren(n2.children, container, fragmentEndAnchor, parentComponent);
     }
     else {
-        patchChildren(n1, n2, container);
+        patchChildren(n1, n2, container, anchor, parentComponent);
     }
 }
 // 处理组件节点
@@ -414,7 +487,14 @@ function mountElement(vnode, container, anchor, parentComponent) {
         mountChildren(vnode.children, el, null, parentComponent);
     }
     // 生成属性
-    mountProps(props, el);
+    if (props) {
+        for (const key in props) {
+            // 非vue保留字属性, 设置到元素el上
+            if (!isReservedProp(key)) {
+                renderApi.hostPatchProp(el, key, null, props[key]);
+            }
+        }
+    }
     // 挂载
     container.appendChild(el);
 }
@@ -431,79 +511,87 @@ function mountChildren(children, container, anchor, parentComponent, start = 0) 
         patch(null, child, container, anchor, parentComponent);
     }
 }
-const domPropsRE = /[A-Z]|^(value|checked|selected|muted|disabled)$/;
-// 挂载属性
-function mountProps(props, el) {
-    for (const key in props) {
-        let value = props[key];
-        switch (key) {
-            // 类名
-            case 'class':
-                el.className = value;
-                break;
-            // 样式
-            case 'style':
-                for (const styleName in value) {
-                    el.style[styleName] = value[styleName];
-                }
-                break;
-            default:
-                // 事件
-                if (/^on[^a-z]/.test(key)) {
-                    const eventName = key.slice(2).toLowerCase();
-                    el.addEventListener(eventName, value);
-                }
-                else if (domPropsRE.test(key)) {
-                    // value|checked|selected|muted|disabled 这几种属性直接在dom上赋值
-                    if (value === '' && isBoolean(el[key])) {
-                        value = true;
-                    }
-                    el[key] = value;
-                }
-                else {
-                    // 剩下的属性使用attr的api进行操作
-                    if (value == null || value === false) {
-                        el.removeAttribute(key);
-                    }
-                    else {
-                        el.setAttribute(key, value);
-                    }
-                }
-                break;
+// patch元素节点
+function patchElement(n1, n2, container, anchor, parentComponent) {
+    console.log('patchElement patch元素节点');
+    // 需要把 el 挂载到新的 vnode
+    const el = (n2.el = n1.el);
+    // 对比 props
+    const oldProps = (n1 && n1.props) || EMPTY_OBJ;
+    const newProps = n2.props || EMPTY_OBJ;
+    patchProps(el, n2, oldProps, newProps);
+    // 对比 children
+    patchChildren(n1, n2, el, anchor, parentComponent);
+}
+// patch属性
+function patchProps(el, vnode, oldProps, newProps) {
+    // 如果新旧属性一致, 则不处理
+    if (oldProps === newProps) {
+        return false;
+    }
+    // 循环新属性, 设置到元素el上
+    for (const key in newProps) {
+        // 如果是vue保留字属性 则跳过
+        if (isReservedProp)
+            continue;
+        const next = newProps[key];
+        const prev = oldProps[key];
+        if (prev !== next) {
+            renderApi.hostPatchProp(el, key, prev, next);
+        }
+    }
+    // 循环旧属性, 把新属性里没有的旧属性删除掉
+    if (oldProps !== EMPTY_OBJ) {
+        for (const key in oldProps) {
+            if (!(key in newProps)) {
+                renderApi.hostPatchProp(el, key, oldProps[key], null);
+            }
         }
     }
 }
-// patch元素节点
-function patchElement(n1, n2, container) {
-    console.log('patchElement patch元素节点');
-    (n1 && n1.props) || {};
-    n2.props || {};
-    // 需要把 el 挂载到新的 vnode
-    const el = (n2.el = n1.el);
-    // 对比 children
-    patchChildren(n1, n2, el);
-}
-// @TODO patch子元素
-function patchChildren(n1, n2, container) {
+/**
+ * patch子元素
+ * 根据子元素的类型, 有9种可能
+ * 1.n2 text n1 text => 更新textContent
+ * 2.n2 text n1 array => 删除n1(unmountChildren), 更新textContent
+ * 3.n2 text n1 null => 更新textContent
+ * 4.n2 array n1 text => 删除n1  mount n2
+ * 5.n2 array n1 array => patchArrayChildren
+ * 6.n2 array n1 null => mount n2
+ * 7.n2 null n1 text => 删除 n1
+ * 8.n2 null n1 array => 删除 n1 (unmountChildren)
+ * 9.n2 null n1 null => 不处理
+*/
+function patchChildren(n1, n2, container, anchor, parentComponent) {
     debugger;
     const { shapeFlag: prevShapeFlag, children: c1 } = n1;
     const { shapeFlag, children: c2 } = n2;
-    // 如果 n2 的 children 是 text 类型的话
-    // 就看看和之前的 n1 的 children 是不是一样的
-    // 如果不一样的话直接重新设置一下 text 即可
+    // n2为text, 则n1有三种可能
     if (shapeFlag & 8 /* TEXT_CHILDREN */) {
+        // 三种情况最后都要更新textContent
         if (c2 !== c1) {
-            console.log("类型为 text_children, 当前需要更新");
             renderApi.hostSetElementText(container, c2);
         }
     }
     else {
-        // 如果之前是 array_children
-        // 现在还是 array_children 的话
-        // 那么我们就需要对比两个 children 啦
+        // 否则n2可能是null 或者 array
+        // 如果n1是array
         if (prevShapeFlag & 16 /* ARRAY_CHILDREN */) {
+            // 如果n2也是array
             if (shapeFlag & 16 /* ARRAY_CHILDREN */) {
+                // 则进行patch子节点
                 patchKeyedChildren();
+            }
+        }
+        else {
+            // 如果n1是null或者text
+            // 如果n1是text, 必然要删除n1
+            if (prevShapeFlag & 8 /* TEXT_CHILDREN */) {
+                renderApi.hostSetElementText(container, '');
+            }
+            // 如果n2是array, 必然要mount n2
+            if (shapeFlag & 16 /* ARRAY_CHILDREN */) {
+                mountChildren(c2, container, anchor, parentComponent);
             }
         }
     }

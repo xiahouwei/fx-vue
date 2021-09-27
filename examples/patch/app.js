@@ -31,5 +31,9 @@ export default h(
 		checked: '',
 		customer: false
 	},
-	'11111111'
+	[
+		h('span', null, 1111111),
+		h('span', null, 3333333),
+		h('span', null, 4444444),
+	]
 );

@@ -1,9 +1,12 @@
 import { createRenderer } from '@fx-vue/runtime-core'
 import { extend, isString } from '@fx-vue/shared'
 import { nodeOps } from './nodeOps'
+import { patchProp } from './patchProp'
 
 // nodeOps为各种dom操作api
-const rendererOptions = extend({}, nodeOps)
+const rendererOptions = extend({
+    patchProp
+}, nodeOps)
 
 let renderer
 // 如果存在renderer对象则返回, 否则创建一个返回

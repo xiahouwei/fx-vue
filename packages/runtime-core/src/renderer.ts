@@ -1,5 +1,5 @@
 import { rendererOptions } from "@fx-vue/runtime-dom"
-import { isBoolean, NOOP, ShapeFlags } from "@fx-vue/shared"
+import { EMPTY_OBJ, isBoolean, isReservedProp, NOOP, ShapeFlags } from "@fx-vue/shared"
 import { createAppAPI } from "./apiCreateApp"
 import { Fragment, isSameVNodeType, normalizeVNode, Text } from "./vnode"
 
@@ -31,7 +31,9 @@ function initRenderApi(options) {
 			// 克隆节点
 			hostCloneNode: options.cloneNode,
 			// 插入模板节点
-			hostInsertStaticContent: options.insertStaticContent
+			hostInsertStaticContent: options.insertStaticContent,
+			// patch属性
+			hostPatchProp: options.patchProp
 		}
 	}
 	return renderApi
@@ -129,7 +131,7 @@ function processElement(n1, n2, container, anchor, parentComponent) {
 	if (n1 == null) {
 		mountElement(n2, container, anchor, parentComponent)
 	} else {
-		patchElement(n1, n2, container)
+		patchElement(n1, n2, container, anchor, parentComponent)
 	}
 }
 
@@ -143,7 +145,7 @@ function processFragment(n1, n2, container, anchor, parentComponent) {
 		renderApi.hostInsert(fragmentEndAnchor, container, anchor)
 		mountChildren(n2.children, container, fragmentEndAnchor, parentComponent)
 	} else {
-		patchChildren(n1, n2, container)
+		patchChildren(n1, n2, container, anchor, parentComponent)
 	}
 }
 
@@ -177,7 +179,14 @@ function mountElement(vnode, container, anchor, parentComponent) {
 		mountChildren(vnode.children, el, null, parentComponent)
 	}
 	// 生成属性
-	mountProps(props, el)
+	if (props) {
+		for (const key in props) {
+			// 非vue保留字属性, 设置到元素el上
+			if (!isReservedProp(key)) {
+				renderApi.hostPatchProp(el, key, null, props[key])
+			}
+		}
+	}
 	// 挂载
 	container.appendChild(el)
 }
@@ -197,88 +206,94 @@ function mountChildren(children, container, anchor, parentComponent, start = 0) 
 	}
 }
 
-const domPropsRE = /[A-Z]|^(value|checked|selected|muted|disabled)$/
-// 挂载属性
-function mountProps(props, el) {
-	for (const key in props) {
-		let value = props[key]
-		switch (key) {
-			// 类名
-			case 'class':
-				el.className = value
-				break
-			// 样式
-			case 'style':
-				for (const styleName in value) {
-					el.style[styleName] = value[styleName]
-				}
-				break
-			default:
-				// 事件
-				if (/^on[^a-z]/.test(key)) {
-					const eventName = key.slice(2).toLowerCase()
-					el.addEventListener(eventName, value)
-				} else if (domPropsRE.test(key)) {
-					// value|checked|selected|muted|disabled 这几种属性直接在dom上赋值
-					if (value === '' && isBoolean(el[key])) {
-						value = true
-					}
-					el[key] = value
-				} else {
-					// 剩下的属性使用attr的api进行操作
-					if (value == null || value === false) {
-						el.removeAttribute(key)
-					} else {
-						el.setAttribute(key, value)
-					}
-				}
-				break
+// patch元素节点
+function patchElement(n1, n2, container, anchor, parentComponent) {
+	console.log('patchElement patch元素节点')
+	// 需要把 el 挂载到新的 vnode
+	const el = (n2.el = n1.el)
+	// 对比 props
+	const oldProps = (n1 && n1.props) || EMPTY_OBJ
+	const newProps = n2.props || EMPTY_OBJ
+	patchProps(el, n2, oldProps, newProps)
+	// 对比 children
+	patchChildren(n1, n2, el, anchor, parentComponent);
+}
+
+// patch属性
+function patchProps(el, vnode, oldProps, newProps) {
+	// 如果新旧属性一致, 则不处理
+	if (oldProps === newProps) {
+		return false
+	}
+	// 循环新属性, 设置到元素el上
+	for (const key in newProps) {
+		// 如果是vue保留字属性 则跳过
+		if (isReservedProp) continue
+		const next = newProps[key]
+		const prev = oldProps[key]
+		if (prev !== next) {
+			renderApi.hostPatchProp(el, key, prev, next)
+		}
+	}
+	// 循环旧属性, 把新属性里没有的旧属性删除掉
+	if (oldProps !== EMPTY_OBJ) {
+		for (const key in oldProps) {
+			if (!(key in newProps)) {
+				renderApi.hostPatchProp(el, key, oldProps[key], null)
+			}
 		}
 	}
 }
 
-// patch元素节点
-function patchElement(n1, n2, container) {
-	console.log('patchElement patch元素节点')
-	const oldProps = (n1 && n1.props) || {};
-	const newProps = n2.props || {};
-
-	// 需要把 el 挂载到新的 vnode
-	const el = (n2.el = n1.el);
-
-	// 对比 props
-	patchProps(el, oldProps, newProps);
-
-	// 对比 children
-	patchChildren(n1, n2, el);
-}
-
-// @TODO patch属性
-function patchProps(el, oldProps, newProps) {
-
-}
-
-// @TODO patch子元素
-function patchChildren(n1, n2, container) {
+/**
+ * patch子元素
+ * 根据子元素的类型, 有9种可能
+ * 1.n2 text n1 text => 更新textContent
+ * 2.n2 text n1 array => 删除n1(unmountChildren), 更新textContent
+ * 3.n2 text n1 null => 更新textContent
+ * 4.n2 array n1 text => 删除n1  mount n2
+ * 5.n2 array n1 array => patchArrayChildren
+ * 6.n2 array n1 null => mount n2
+ * 7.n2 null n1 text => 删除 n1
+ * 8.n2 null n1 array => 删除 n1 (unmountChildren)
+ * 9.n2 null n1 null => 不处理
+*/
+function patchChildren(n1, n2, container, anchor, parentComponent) {
 	debugger
-	const { shapeFlag: prevShapeFlag, children: c1 } = n1;
-	const { shapeFlag, children: c2 } = n2;
+	const { shapeFlag: prevShapeFlag, children: c1 } = n1
+	const { shapeFlag, children: c2 } = n2
 
-	// 如果 n2 的 children 是 text 类型的话
-	// 就看看和之前的 n1 的 children 是不是一样的
-	// 如果不一样的话直接重新设置一下 text 即可
+	// n2为text, 则n1有三种可能
 	if (shapeFlag & ShapeFlags.TEXT_CHILDREN) {
+		// 如果n1为数组, 先删除n1
+		if (prevShapeFlag & ShapeFlags.ARRAY_CHILDREN) {
+			unmountChildren(c1)
+		}
+		// 三种情况最后都要更新textContent
 		if (c2 !== c1) {
-			console.log("类型为 text_children, 当前需要更新");
-			renderApi.hostSetElementText(container, c2 as string);
+			renderApi.hostSetElementText(container, c2)
 		}
 	} else {
-		// 如果之前是 array_children
-		// 现在还是 array_children 的话
-		// 那么我们就需要对比两个 children 啦
+		// 否则n2可能是null 或者 array
+		// 如果n1是array
 		if (prevShapeFlag & ShapeFlags.ARRAY_CHILDREN) {
+			// 如果n2也是array
 			if (shapeFlag & ShapeFlags.ARRAY_CHILDREN) {
+				// 则进行patch子节点
 				patchKeyedChildren(c1, c2, container);
+			} else {
+				// 否则删除n1
+				unmountChildren(c1, true)
+			}
+		} else {
+			// 如果n1是null或者text
+			// 如果n1是text, 必然要删除n1
+			if (prevShapeFlag & ShapeFlags.TEXT_CHILDREN) {
+				renderApi.hostSetElementText(container, '')
+			}
+			// 如果n2是array, 必然要mount n2
+			if (shapeFlag & ShapeFlags.ARRAY_CHILDREN) {
+				mountChildren(c2, container, anchor, parentComponent)
 			}
 		}
 	}
@@ -304,6 +319,10 @@ function unmount(vnode, parentComponent, parentSuspense, doRemove = false,) {
 	if (doRemove) {
 		remove(vnode)
 	}
+}
+
+function unmountChildren(children, doRemove = false) {
+
 }
 
 // 取消挂载组件
@@ -343,7 +362,7 @@ function removeFragment(cur, end) {
 }
 
 // patch 子节点
-function patchKeyedChildren (c1, c2, container) {
+function patchKeyedChildren(c1, c2, container) {
 	console.log('patchKeyedChildren')
 }
 
