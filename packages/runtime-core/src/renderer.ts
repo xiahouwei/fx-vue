@@ -75,6 +75,7 @@ function patch(n1, n2, container, anchor = null, parentComponent = null) {
 	// 如果n1, n2为不同类型的vnode则对n1进行取消挂载
 	if (n1 && !isSameVNodeType(n1, n2)) {
 		unmount(n1, parentComponent, null, true)
+		// 设置n1为null, 就不会进入patch了, 而是进行mount
 		n1 = null
 	}
 	// 生成节点的条件需要 根据n2的属性来判断
@@ -154,13 +155,6 @@ function processComponent(n1, n2, container, anchor, parentComponent) {
 	} else {
 		updateComponent(n1, n2, container)
 	}
-}
-
-// 挂载文本节点
-function mountTextNode(vnode, container) {
-	console.log('mountTextNode 挂载文本节点')
-	const textNode = document.createTextNode(vnode.children)
-	container.appendChild(textNode)
 }
 
 // 挂载元素节点
@@ -243,14 +237,51 @@ function mountProps(props, el) {
 	}
 }
 
-// @TODO patch元素节点
+// patch元素节点
 function patchElement(n1, n2, container) {
 	console.log('patchElement patch元素节点')
+	const oldProps = (n1 && n1.props) || {};
+	const newProps = n2.props || {};
+
+	// 需要把 el 挂载到新的 vnode
+	const el = (n2.el = n1.el);
+
+	// 对比 props
+	patchProps(el, oldProps, newProps);
+
+	// 对比 children
+	patchChildren(n1, n2, el);
+}
+
+// @TODO patch属性
+function patchProps(el, oldProps, newProps) {
+
 }
 
 // @TODO patch子元素
 function patchChildren(n1, n2, container) {
+	debugger
+	const { shapeFlag: prevShapeFlag, children: c1 } = n1;
+	const { shapeFlag, children: c2 } = n2;
 
+	// 如果 n2 的 children 是 text 类型的话
+	// 就看看和之前的 n1 的 children 是不是一样的
+	// 如果不一样的话直接重新设置一下 text 即可
+	if (shapeFlag & ShapeFlags.TEXT_CHILDREN) {
+		if (c2 !== c1) {
+			console.log("类型为 text_children, 当前需要更新");
+			renderApi.hostSetElementText(container, c2 as string);
+		}
+	} else {
+		// 如果之前是 array_children
+		// 现在还是 array_children 的话
+		// 那么我们就需要对比两个 children 啦
+		if (prevShapeFlag & ShapeFlags.ARRAY_CHILDREN) {
+			if (shapeFlag & ShapeFlags.ARRAY_CHILDREN) {
+				patchKeyedChildren(c1, c2, container);
+			}
+		}
+	}
 }
 
 // @TODO 更新组件节点
@@ -309,5 +340,10 @@ function removeFragment(cur, end) {
 		cur = next
 	}
 	renderApi.hostRemove(end)
+}
+
+// patch 子节点
+function patchKeyedChildren (c1, c2, container) {
+	console.log('patchKeyedChildren')
 }
 

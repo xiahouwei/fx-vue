@@ -1,7 +1,7 @@
 import { h, Text, Fragment, render } from "../../node_modules/@fx-vue/vue/dist/vue.esm-bundler.js"
 
 const app2 = h(
-	"div",
+	"span",
 	{
 		class: 'c',
 		style: {
@@ -13,9 +13,7 @@ const app2 = h(
 		checked: '',
 		customer: false
 	},
-	[
-		h('div', null, '2222222')
-	]
+	'2222222'
 )
 
 export default h(
@@ -33,7 +31,5 @@ export default h(
 		checked: '',
 		customer: false
 	},
-	[
-		h('div', null, '11111111')
-	]
+	'11111111'
 );
