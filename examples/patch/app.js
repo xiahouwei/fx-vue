@@ -1,27 +1,33 @@
 import { h, Text, Fragment, render } from "../../node_modules/@fx-vue/vue/dist/vue.esm-bundler.js"
 
 const app2 = h(
-	"span",
+	"ul",
 	{
 		class: 'c',
 		style: {
-			border: '1px solid',
-			fontSize: '14px'
+			border: '1px solid blue',
+			fontSize: '24px'
 		},
 		onClick: () => console.log('click2'),
 		id: 'foo2',
 		checked: '',
 		customer: false
 	},
-	'2222222'
+	[
+		h('li', null, 'first'),
+		h(Fragment, null, [
+			h('li', null, 'middle')
+		]),
+		h('li', null, 'last')
+	]
 )
 
 export default h(
-	"div",
+	"ul",
 	{
 		class: 'a b',
 		style: {
-			border: '1px solid',
+			border: '1px solid red',
 			fontSize: '14px'
 		},
 		onClick: () => {
@@ -32,8 +38,10 @@ export default h(
 		customer: false
 	},
 	[
-		h('span', null, 1111111),
-		h('span', null, 3333333),
-		h('span', null, 4444444),
+		h('li', null, 'first'),
+		h(Fragment, null, [
+		]),
+		h('li', null, 'last')
 	]
-);
+
+)

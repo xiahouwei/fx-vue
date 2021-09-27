@@ -61,7 +61,9 @@ function createVNode(type, props, children) {
         type,
         props,
         children,
-        shapeFlag
+        shapeFlag,
+        // anchor是Fragment的专用属性
+        anchor: null
     };
     // 格式化children, 以及通过位运算 更新shapeFlag
     normalizeChildren(vnode, children);
@@ -414,7 +416,7 @@ function patch(n1, n2, container, anchor = null, parentComponent = null) {
             }
             else if (shapeFlag & 6 /* COMPONENT */) {
                 // 组件节点
-                processComponent(n1, n2, container);
+                processComponent(n1, n2, container, anchor, parentComponent);
             }
     }
 }
@@ -449,12 +451,16 @@ function processElement(n1, n2, container, anchor, parentComponent) {
 }
 // 处理传送门节点
 function processFragment(n1, n2, container, anchor, parentComponent) {
+    debugger;
     console.log('processFragment 处理传送门节点');
+    // 这两个空文本节点, 一个作为el, 一个作为anchor 且把它们赋值到vnode上
     const fragmentStartAnchor = (n2.el = n1 ? n1.el : renderApi.hostCreateText(''));
     const fragmentEndAnchor = (n2.anchor = n1 ? n1.anchor : renderApi.hostCreateText(''));
     if (n1 == null) {
+        // 先插入空节点
         renderApi.hostInsert(fragmentStartAnchor, container, anchor);
         renderApi.hostInsert(fragmentEndAnchor, container, anchor);
+        // 再挂载子元素, 这里锚点传入, 挂载的子元素位置就是正确的
         mountChildren(n2.children, container, fragmentEndAnchor, parentComponent);
     }
     else {
@@ -465,7 +471,7 @@ function processFragment(n1, n2, container, anchor, parentComponent) {
 function processComponent(n1, n2, container, anchor, parentComponent) {
     console.log('processComponent 处理组件节点');
     if (n1 == null) {
-        mountComponent(n2, container);
+        mountComponent(n2, container, anchor, parentComponent);
     }
     else {
         updateComponent();
@@ -495,14 +501,14 @@ function mountElement(vnode, container, anchor, parentComponent) {
             }
         }
     }
-    // 挂载
-    container.appendChild(el);
+    // 挂载 这里传入的anchor参数 是为了保证fragment挂载位置正确
+    renderApi.hostInsert(el, container, anchor);
 }
 // 挂载组件节点
-function mountComponent(vnode, container, parentComponent) {
+function mountComponent(vnode, container, anchor, parentComponent) {
     // 如果是组件 type 内必然有render函数
     const _vnode = vnode.type.render();
-    patch(container._vnode, _vnode, container);
+    patch(container._vnode, _vnode, container, anchor, parentComponent);
 }
 // 挂载子节点
 function mountChildren(children, container, anchor, parentComponent, start = 0) {
@@ -563,7 +569,6 @@ function patchProps(el, vnode, oldProps, newProps) {
  * 9.n2 null n1 null => 不处理
 */
 function patchChildren(n1, n2, container, anchor, parentComponent) {
-    debugger;
     const { shapeFlag: prevShapeFlag, children: c1 } = n1;
     const { shapeFlag, children: c2 } = n2;
     // n2为text, 则n1有三种可能
@@ -580,7 +585,7 @@ function patchChildren(n1, n2, container, anchor, parentComponent) {
             // 如果n2也是array
             if (shapeFlag & 16 /* ARRAY_CHILDREN */) {
                 // 则进行patch子节点
-                patchKeyedChildren();
+                patchKeyedChildren(c1, c2, container, anchor, parentComponent);
             }
         }
         else {
@@ -608,6 +613,8 @@ function unmount(vnode, parentComponent, parentSuspense, doRemove = false) {
         remove(vnode);
     }
 }
+function unmountChildren(children, doRemove = false) {
+}
 // 删除节点
 function remove(vnode) {
     const { type, el, anchor } = vnode;
@@ -632,8 +639,20 @@ function removeFragment(cur, end) {
     renderApi.hostRemove(end);
 }
 // patch 子节点
-function patchKeyedChildren(c1, c2, container) {
+function patchKeyedChildren(c1, c2, container, anchor, parentComponent) {
     console.log('patchKeyedChildren');
+    const oldLenght = c1.length;
+    const newLenght = c2.length;
+    const commonLength = Math.min(oldLenght, newLenght);
+    for (let i = 0; i < commonLength; i++) {
+        patch(c1[i], c2[i], container, anchor, parentComponent);
+    }
+    if (oldLenght > newLenght) {
+        unmountChildren(c1.slice(commonLength));
+    }
+    else {
+        mountChildren(c2.slice(commonLength), container, anchor, parentComponent);
+    }
 }
 
 function h(type, props, children) {

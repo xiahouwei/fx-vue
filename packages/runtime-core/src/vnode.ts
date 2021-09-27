@@ -28,7 +28,9 @@ export function createVNode(type, props?: any, children?: any) {
 		type,
 		props,
 		children,
-		shapeFlag
+		shapeFlag,
+		// anchor是Fragment的专用属性
+		anchor: null
 	}
 
 	// 格式化children, 以及通过位运算 更新shapeFlag
