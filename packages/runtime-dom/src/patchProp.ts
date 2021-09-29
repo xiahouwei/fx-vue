@@ -1,29 +1,19 @@
-import { isBoolean } from "@fx-vue/shared"
+import { isBoolean, isOn } from "@fx-vue/shared"
+import { patchClass } from "./modules/class"
+import { patchStyle } from "./modules/style"
 
 const domPropsRE = /[A-Z]|^(value|checked|selected|muted|disabled)$/
-export const patchProp = (el, key, prevValue, nextValue) => {
+export const patchProp = (el, key, prevValue, nextValue, isSVG = false) => {
 	switch(key) {
 		case 'class':
-			el.className = nextValue || ''
+			patchClass(el, nextValue, isSVG)
 			break
 		case 'style':
-			if (nextValue == null) {
-				el.removeAttribute('style')
-			} else {
-				for (const styleName in nextValue) {
-					el.style[styleName] = nextValue[styleName]
-				}
-				if (prevValue) {
-					for (const styleName in prevValue) {
-						if (nextValue[styleName] == null) {
-							el.style[styleName] = ''
-						}
-					}
-				}
-			}
+			patchStyle(el, prevValue, nextValue)
 			break
 		default:
-			if (/^on[^a-z]/.test(key)) {
+			// 处理事件
+			if (isOn(key)) {
 				const eventName = key.slice(2).toLowerCase()
 				if (prevValue) {
 					el.removeEventListener(eventName, prevValue)
