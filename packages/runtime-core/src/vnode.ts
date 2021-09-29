@@ -1,4 +1,4 @@
-import { isArray, isObject, isString, ShapeFlags } from "@fx-vue/shared"
+import { isArray, isFunction, isObject, isString, ShapeFlags } from "@fx-vue/shared"
 
 // 碎片节点
 export const Fragment = Symbol('Fragment')
@@ -10,10 +10,7 @@ export const Comment = Symbol('Comment')
 export const Static = Symbol('Static')
 
 // 创建vnode
-export function createVNode(type, props?: any, children?: any) {
-	if (!props) {
-		props = {}
-	}
+export function createVNode(type, props = null, children?: any) {
 	// type 为 string : createVNode("div")
 	// type 为 object : createVNode(App) 用户传入了options
 
@@ -22,12 +19,14 @@ export function createVNode(type, props?: any, children?: any) {
 		? ShapeFlags.ELEMENT
 		: isObject(type)
 			? ShapeFlags.STATEFUL_COMPONENT
-			: 0
+			: isFunction(type)
+				? ShapeFlags.FUNCTIONAL_COMPONENT
+				: 0
 
 	const vnode = {
 		el: null,
 		component: null,
-		key: props.key || null,
+		key: props && props.key || null,
 		type,
 		props,
 		children,
@@ -91,7 +90,7 @@ export function normalizeVNode(child) {
 	}
 }
 
-export function cloneVNode (vnode) {
+export function cloneVNode(vnode) {
 	const cloned = {}
 	for (const key of vnode) {
 		cloned[key] = vnode[key]
@@ -102,4 +101,9 @@ export function cloneVNode (vnode) {
 // 判断是否为同类型的vnode
 export function isSameVNodeType(n1, n2) {
 	return n1.type === n2.type && n1.key === n2.key
+}
+
+// 判断是不是vnode类型
+export function isVNode(value) {
+	return value ? value.__v_isVNode === true : false
 }

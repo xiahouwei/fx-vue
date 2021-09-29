@@ -20,10 +20,15 @@ Object.freeze([]);
 const NOOP = () => { };
 // 永远返回false
 const NO = () => false;
+// 匹配on
+const onRE = /^on[^a-z]/;
+const isOn = (key) => onRE.test(key);
 // 合并
 const extend = Object.assign;
 // 判断是数组
 const isArray = Array.isArray;
+// 判断是function
+const isFunction = (val) => typeof val === 'function';
 // 判断是string
 const isString = (val) => typeof val === 'string';
 // 判断是Boolean
@@ -56,7 +61,9 @@ function createVNode(type, props, children) {
         ? 1 /* ELEMENT */
         : isObject(type)
             ? 4 /* STATEFUL_COMPONENT */
-            : 0;
+            : isFunction(type)
+                ? 2 /* FUNCTIONAL_COMPONENT */
+                : 0;
     const vnode = {
         el: null,
         component: null,
@@ -134,6 +141,10 @@ function cloneVNode(vnode) {
 // 判断是否为同类型的vnode
 function isSameVNodeType(n1, n2) {
     return n1.type === n2.type && n1.key === n2.key;
+}
+// 判断是不是vnode类型
+function isVNode(value) {
+    return value ? value.__v_isVNode === true : false;
 }
 
 // SVG命名空间
@@ -220,31 +231,71 @@ const nodeOps = {
     }
 };
 
+// patch 元素的 class
+function patchClass(el, value, isSVG) {
+    // 如果不处理, null, undefined会以字符串的形式赋值到class上
+    if (value == null) {
+        value = '';
+    }
+    if (isSVG) {
+        el.setAttribute('class', value);
+    }
+    else {
+        // @TODO 这里还应该处理transitionClasses
+        el.className = value;
+    }
+}
+
+// patch 元素的style
+function patchStyle(el, prev, next) {
+    const style = el.style;
+    // 如果新的style不存在, 则删除元素的style
+    if (!next) {
+        el.removeAttribute('style');
+    }
+    else if (isString(next)) {
+        // 这里缓存了一下元素的display, 在后面的逻辑用到
+        const current = style.display;
+        // 从cssText可以直接以字符串的方式对元素的style进行赋值
+        style.cssText = next;
+        // _vod 表示元素 是否 通过 v-show来进行显示, 通过之前的缓存,  能够让cssText不影响v-show的功能
+        if ('_vod' in el) {
+            style.display = current;
+        }
+    }
+    else {
+        // style是对象
+        // 先把需要赋值的style设置到元素上
+        for (const key in next) {
+            setStyle(style, key, next[key]);
+        }
+        // 再把需要删除的style 从元素上删除
+        if (prev && !isString(prev)) {
+            for (const key in prev) {
+                if (next[key] == null) {
+                    setStyle(style, key, '');
+                }
+            }
+        }
+    }
+}
+function setStyle(style, name, val) {
+    // @TODO 这里还应该处理自定义属性, 和 !important 的情况
+    style[name] = val;
+}
+
 const domPropsRE = /[A-Z]|^(value|checked|selected|muted|disabled)$/;
-const patchProp = (el, key, prevValue, nextValue) => {
+const patchProp = (el, key, prevValue, nextValue, isSVG = false) => {
     switch (key) {
         case 'class':
-            el.className = nextValue || '';
+            patchClass(el, nextValue, isSVG);
             break;
         case 'style':
-            if (nextValue == null) {
-                el.removeAttribute('style');
-            }
-            else {
-                for (const styleName in nextValue) {
-                    el.style[styleName] = nextValue[styleName];
-                }
-                if (prevValue) {
-                    for (const styleName in prevValue) {
-                        if (nextValue[styleName] == null) {
-                            el.style[styleName] = '';
-                        }
-                    }
-                }
-            }
+            patchStyle(el, prevValue, nextValue);
             break;
         default:
-            if (/^on[^a-z]/.test(key)) {
+            // 处理事件
+            if (isOn(key)) {
                 const eventName = key.slice(2).toLowerCase();
                 if (prevValue) {
                     el.removeEventListener(eventName, prevValue);
@@ -683,8 +734,33 @@ function patchKeyedChildren(c1, c2, container, parentAnchor, parentComponent) {
     }
 }
 
-function h(type, props, children) {
-    return createVNode(type, props, children);
+function h(type, propsOrChildren, children) {
+    // 为了方便h函数的使用, 应该允许用户不传propsOrChildren, 所以要做一些处理
+    const l = arguments.length;
+    if (l === 2) {
+        // propsOrChildren  是对象不是数组, 那么可能传的是props, 也可能传的是  vnode类型的children
+        if (isObject(propsOrChildren) && !isArray(propsOrChildren)) {
+            if (isVNode(propsOrChildren)) {
+                return createVNode(type, null, [propsOrChildren]);
+            }
+            return createVNode(type, propsOrChildren);
+        }
+        else {
+            // propsOrChildren 是数组, 必然是children
+            return createVNode(type, null, propsOrChildren);
+        }
+    }
+    else {
+        if (l > 3) {
+            // 如果参数大于3个, 则把第三个开始的参数 至 最后一个参数都当作children
+            children = Array.prototype.slice.call(arguments, 2);
+        }
+        else if (l === 3 && isVNode(children)) {
+            // 如果传了3个参数, 但是最后一个参数不是数组 而是vnode, 那么帮他转成数组
+            children = [children];
+        }
+        return createVNode(type, propsOrChildren, children);
+    }
 }
 
 export { Fragment, Text, createRenderer, h, render };
