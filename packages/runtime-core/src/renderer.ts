@@ -88,7 +88,7 @@ function patch(n1, n2, container, anchor = null, parentComponent = null) {
 			processText(n1, n2, container, anchor)
 			break
 		case Fragment:
-			// 传送门节点
+			// 碎片节点
 			processFragment(n1, n2, container, anchor, parentComponent)
 			break
 		default:
@@ -135,10 +135,9 @@ function processElement(n1, n2, container, anchor, parentComponent) {
 	}
 }
 
-// 处理传送门节点
+// 处理碎片节点
 function processFragment(n1, n2, container, anchor, parentComponent) {
-	debugger
-	console.log('processFragment 处理传送门节点')
+	console.log('processFragment 处理碎片节点')
 	// 这两个空文本节点, 一个作为el, 一个作为anchor 且把它们赋值到vnode上
 	const fragmentStartAnchor = (n2.el = n1 ? n1.el : renderApi.hostCreateText(''))!
 	const fragmentEndAnchor = (n2.anchor = n1 ? n1.anchor : renderApi.hostCreateText(''))!
@@ -149,7 +148,7 @@ function processFragment(n1, n2, container, anchor, parentComponent) {
 		// 再挂载子元素, 这里锚点传入, 挂载的子元素位置就是正确的
 		mountChildren(n2.children, container, fragmentEndAnchor, parentComponent)
 	} else {
-		patchChildren(n1, n2, container, anchor, parentComponent)
+		patchChildren(n1, n2, container, fragmentEndAnchor, parentComponent)
 	}
 }
 
@@ -198,8 +197,9 @@ function mountElement(vnode, container, anchor, parentComponent) {
 // 挂载组件节点
 function mountComponent(vnode, container, anchor, parentComponent) {
 	// 如果是组件 type 内必然有render函数
-	const _vnode = vnode.type.render()
-	patch(container._vnode, _vnode, container, anchor, parentComponent)
+	const instance = vnode
+	instance.$vnode = instance.type.render()
+	patch(container._vnode, instance.$vnode, container, anchor, parentComponent)
 }
 
 // 挂载子节点
@@ -265,12 +265,12 @@ function patchProps(el, vnode, oldProps, newProps) {
 function patchChildren(n1, n2, container, anchor, parentComponent) {
 	const { shapeFlag: prevShapeFlag, children: c1 } = n1
 	const { shapeFlag, children: c2 } = n2
-
+	
 	// n2为text, 则n1有三种可能
 	if (shapeFlag & ShapeFlags.TEXT_CHILDREN) {
 		// 如果n1为数组, 先删除n1
 		if (prevShapeFlag & ShapeFlags.ARRAY_CHILDREN) {
-			unmountChildren(c1)
+			unmountChildren(c1, parentComponent)
 		}
 		// 三种情况最后都要更新textContent
 		if (c2 !== c1) {
@@ -285,8 +285,8 @@ function patchChildren(n1, n2, container, anchor, parentComponent) {
 				// 则进行patch子节点
 				patchKeyedChildren(c1, c2, container, anchor, parentComponent)
 			} else {
-				// 否则删除n1
-				unmountChildren(c1, true)
+				// 否则删除n1, 没有n2, 仅仅是删除n1
+				unmountChildren(c1, parentComponent, true)
 			}
 		} else {
 			// 如果n1是null或者text
@@ -308,15 +308,15 @@ function updateComponent(n1, n2, container) {
 }
 
 // 取消挂载
-function unmount(vnode, parentComponent, parentSuspense, doRemove = false,) {
+function unmount(vnode, parentComponent, parentSuspense, doRemove = false) {
 	console.log('unmount 取消挂载')
 	const { type, shapeFlag } = vnode
 	if (shapeFlag & ShapeFlags.COMPONENT) {
 		// 取消挂载组件
 		unmountComponent(vnode)
 	} else if (type === Fragment) {
-		// 取消挂载传送门
-		unmountFragment()
+		// 取消挂载碎片节点
+		unmountChildren(vnode, parentComponent)
 	}
 	// 删除元素
 	if (doRemove) {
@@ -324,8 +324,11 @@ function unmount(vnode, parentComponent, parentSuspense, doRemove = false,) {
 	}
 }
 
-function unmountChildren(children, doRemove = false) {
-
+// 取消挂载子元素
+function unmountChildren(children, parentComponent, doRemove = false, start = 0) {
+	for (let i = start; i < children.length; i++) {
+		unmount(children[i], parentComponent, null, doRemove)
+	}
 }
 
 // 取消挂载组件
@@ -333,15 +336,10 @@ function unmountComponent(vnode) {
 
 }
 
-// 取消挂载传送门
-function unmountFragment() {
-
-}
-
 // 删除节点
 function remove(vnode) {
 	const { type, el, anchor } = vnode
-	// 如果是传送门类型, 则调用专用删除函数
+	// 如果是碎片类型, 则调用专用删除函数
 	if (type === Fragment) {
 		removeFragment(el, anchor)
 		return
@@ -353,30 +351,49 @@ function remove(vnode) {
 	}
 }
 
-// 删除传送门元素
+// 删除碎片元素
 function removeFragment(cur, end) {
+	// cur为开始的text节点, end为结束的text节点
 	let next
+	// 通过 指针指向下一个, 删除当前, 当前指针指向下一个, 重复这个步骤, 达到删除 start => end 所有节点
 	while (cur !== end) {
 		next = renderApi.hostNextSibling(cur)
 		renderApi.hostRemove(cur)
 		cur = next
 	}
+	// 最后把结束节点删除
 	renderApi.hostRemove(end)
 }
 
 // patch 子节点
-function patchKeyedChildren(c1, c2, container, anchor, parentComponent) {
+function patchUnKeyedChildren(c1, c2, container, parentAnchor, parentComponent) {
+	console.log('patchUnKeyedChildren')
+	const oldLenght = c1.length
+	const newLenght = c2.length
+	const commonLength = Math.min(oldLenght, newLenght)
+	for (let i = 0; i < commonLength; i++) {
+		patch(c1[i], c2[i], container, parentAnchor, parentComponent)
+	}
+	if (oldLenght > newLenght) {
+		unmountChildren(c1.slice(commonLength), parentComponent)
+	} else {
+		mountChildren(c2.slice(commonLength), container, parentAnchor, parentComponent)
+	}
+}
+
+function patchKeyedChildren(c1, c2, container, parentAnchor, parentComponent) {
 	console.log('patchKeyedChildren')
 	const oldLenght = c1.length
 	const newLenght = c2.length
 	const commonLength = Math.min(oldLenght, newLenght)
 	for (let i = 0; i < commonLength; i++) {
-		patch(c1[i], c2[i], container, anchor, parentComponent)
+		patch(c1[i], c2[i], container, parentAnchor, parentComponent)
 	}
 	if (oldLenght > newLenght) {
-		unmountChildren(c1.slice(commonLength))
+		unmountChildren(c1.slice(commonLength), parentComponent)
 	} else {
-		mountChildren(c2.slice(commonLength), container, anchor, parentComponent)
+		mountChildren(c2.slice(commonLength), container, parentAnchor, parentComponent)
 	}
 }
+
 

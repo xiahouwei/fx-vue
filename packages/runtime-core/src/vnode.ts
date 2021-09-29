@@ -1,9 +1,12 @@
 import { isArray, isObject, isString, ShapeFlags } from "@fx-vue/shared"
 
-
+// 碎片节点
 export const Fragment = Symbol('Fragment')
+// 文本节点
 export const Text = Symbol('Text')
+// 注释节点
 export const Comment = Symbol('Comment')
+// 静态节点
 export const Static = Symbol('Static')
 
 // 创建vnode

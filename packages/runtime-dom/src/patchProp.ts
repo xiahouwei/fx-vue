@@ -7,13 +7,17 @@ export const patchProp = (el, key, prevValue, nextValue) => {
 			el.className = nextValue || ''
 			break
 		case 'style':
-			for (const styleName in nextValue) {
-				el.style[styleName] = nextValue[styleName]
-			}
-			if (prevValue) {
-				for (const styleName in prevValue) {
-					if (nextValue[styleName] == null) {
-						el.style[styleName] = ''
+			if (nextValue == null) {
+				el.removeAttribute('style')
+			} else {
+				for (const styleName in nextValue) {
+					el.style[styleName] = nextValue[styleName]
+				}
+				if (prevValue) {
+					for (const styleName in prevValue) {
+						if (nextValue[styleName] == null) {
+							el.style[styleName] = ''
+						}
 					}
 				}
 			}
