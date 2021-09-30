@@ -283,7 +283,12 @@ function patchChildren(n1, n2, container, anchor, parentComponent) {
 			// 如果n2也是array
 			if (shapeFlag & ShapeFlags.ARRAY_CHILDREN) {
 				// 则进行patch子节点
-				patchKeyedChildren(c1, c2, container, anchor, parentComponent)
+				// @TODO 暂时判断是否有key
+				if (c1[0] && c1[0].key != null && c2[0] && c2[0].key != null) {
+					patchKeyedChildren(c1, c2, container, anchor, parentComponent)
+				} else {
+					patchUnKeyedChildren(c1, c2, container, anchor, parentComponent)
+				}
 			} else {
 				// 否则删除n1, 没有n2, 仅仅是删除n1
 				unmountChildren(c1, parentComponent, true)
@@ -381,19 +386,52 @@ function patchUnKeyedChildren(c1, c2, container, parentAnchor, parentComponent) 
 	}
 }
 
+// patch子节点 用到key, 新旧子节点做循环, 找到相同的就path, 如果位置变了就insert, 新的多了就创建, 旧的多了就删除
 function patchKeyedChildren(c1, c2, container, parentAnchor, parentComponent) {
-	console.log('patchKeyedChildren')
-	const oldLenght = c1.length
-	const newLenght = c2.length
-	const commonLength = Math.min(oldLenght, newLenght)
-	for (let i = 0; i < commonLength; i++) {
-		patch(c1[i], c2[i], container, parentAnchor, parentComponent)
+	console.log('patchKeyedChildren1')
+	debugger
+	// 控件换时间, 先循环老节点, 创建老节点map
+	const map = new Map()
+	c1.forEach((prev, index) => {
+		map.set(prev.key, { prev, index })
+	})
+	// 设置最大索引指针为0
+	let maxNewIndexSoFar = 0
+	// 循环新结点, 目的是找出新节点与老节点相同的(通过key)
+	for (let i = 0; i < c2.length; i++) {
+		// 找出新节点
+		const next = c2[i]
+		// 如果可以从旧节点里找出
+		if (map.has(next.key)) {
+			// 新旧节点patch更新
+			const { prev, index } = map.get(next.key)
+			patch(prev, next, container, parentAnchor, parentComponent)
+			// 下面要进行移动的操作了
+			// 如果是 [1,2,3] => [1,2,3] 是不需要移动的, 因为索引是递增的
+			// 如果是 [1,2,3] => [3,1,2] 索引递增的状态被打破了, 就要进行节点移动了
+			// 如果节点的旧索引小于指针(指针会保留遍历过的最大索引), 说明这个节点 打破了递增状态, 那就移动他
+			if (index < maxNewIndexSoFar) {
+				// 找出新节点 的 前一个节点 的 真实dom 的 后一个dom的位置, 然后把新节点插入
+				const anchor = c2[i -1].el.nextSibling
+				container.insertBefore(next.el, anchor)
+			} else {
+				// 指针永远保留最大的索引
+				maxNewIndexSoFar = index
+			}
+			// 操作完dom, 把map对应的元素删除
+			map.delete(next.key)
+		} else {
+			// 如果找不到, 就创建
+			// 如果当前是第0个, 把新节点插入到 c1[0].el 即第一个旧节点之前
+			// 如果不是第0个, 通过c2[i - 1].el.nextSibling, 插入到新节点 前一个节点 的真实dom 的后一个节点之前
+			const anchor = i === 0 ? c1[0].el : c2[i - 1].el.nextSibling
+			patch(null, next, container, anchor)
+		}
 	}
-	if (oldLenght > newLenght) {
-		unmountChildren(c1.slice(commonLength), parentComponent)
-	} else {
-		mountChildren(c2.slice(commonLength), container, parentAnchor, parentComponent)
-	}
+	// 这里再循环的 必然是要销毁的节点了
+	map.forEach(({ prev }) => {
+		unmount(prev, parentComponent, null, true)
+	})
 }
 
 

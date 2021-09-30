@@ -53,10 +53,7 @@ var VueShared = (function (exports) {
   // 注释节点
   const Comment = Symbol('Comment');
   // 创建vnode
-  function createVNode(type, props, children) {
-      if (!props) {
-          props = {};
-      }
+  function createVNode(type, props = null, children) {
       // type 为 string : createVNode("div")
       // type 为 object : createVNode(App) 用户传入了options
       // 根据传入的节点类型type生成shapeFlag
@@ -70,7 +67,7 @@ var VueShared = (function (exports) {
       const vnode = {
           el: null,
           component: null,
-          key: props.key || null,
+          key: props && props.key || null,
           type,
           props,
           children,
@@ -469,7 +466,13 @@ var VueShared = (function (exports) {
               // 如果n2也是array
               if (shapeFlag & 16 /* ARRAY_CHILDREN */) {
                   // 则进行patch子节点
-                  patchKeyedChildren(c1, c2, container, anchor, parentComponent);
+                  // @TODO 暂时判断是否有key
+                  if (c1[0] && c1[0].key != null && c2[0] && c2[0].key != null) {
+                      patchKeyedChildren(c1, c2, container, anchor, parentComponent);
+                  }
+                  else {
+                      patchUnKeyedChildren(c1, c2, container, anchor, parentComponent);
+                  }
               }
               else {
                   // 否则删除n1, 没有n2, 仅仅是删除n1
@@ -539,8 +542,9 @@ var VueShared = (function (exports) {
       // 最后把结束节点删除
       renderApi.hostRemove(end);
   }
-  function patchKeyedChildren(c1, c2, container, parentAnchor, parentComponent) {
-      console.log('patchKeyedChildren');
+  // patch 子节点
+  function patchUnKeyedChildren(c1, c2, container, parentAnchor, parentComponent) {
+      console.log('patchUnKeyedChildren');
       const oldLenght = c1.length;
       const newLenght = c2.length;
       const commonLength = Math.min(oldLenght, newLenght);
@@ -553,6 +557,45 @@ var VueShared = (function (exports) {
       else {
           mountChildren(c2.slice(commonLength), container, parentAnchor, parentComponent);
       }
+  }
+  // patch子节点 用到key, 新旧子节点做循环, 找到相同的就path, 如果位置变了就insert, 新的多了就创建, 旧的多了就删除
+  function patchKeyedChildren(c1, c2, container, parentAnchor, parentComponent) {
+      console.log('patchKeyedChildren1');
+      debugger;
+      // 控件换时间, 先循环老节点, 创建老节点map
+      const map = new Map();
+      c1.forEach((prev, index) => {
+          map.set(prev.key, { prev, index });
+      });
+      // 设置最大新节点指针为0
+      let maxNewIndexSoFar = 0;
+      // 循环新结点, 目的是找出新节点与老节点相同的(通过key)
+      for (let i = 0; i < c2.length; i++) {
+          // 找出新节点
+          const next = c2[i];
+          // 如果可以从旧节点里找出
+          if (map.has(next.key)) {
+              // 新旧节点patch
+              const { prev, index } = map.get(next.key);
+              patch(prev, next, container, parentAnchor, parentComponent);
+              if (index < maxNewIndexSoFar) {
+                  const anchor = c2[i - 1].el.nextSibling;
+                  container.insertBefore(next.el, anchor);
+              }
+              else {
+                  maxNewIndexSoFar = index;
+              }
+              map.delete(next.key);
+          }
+          else {
+              // 如果找不到, 就创建
+              const anchor = i === 0 ? c1[0].el : c2[i - 1].el.nextSibling;
+              patch(null, next, container, anchor);
+          }
+      }
+      map.forEach(({ prev }) => {
+          unmount(prev, parentComponent, null, true);
+      });
   }
 
   function h(type, propsOrChildren, children) {
