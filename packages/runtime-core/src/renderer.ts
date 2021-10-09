@@ -370,27 +370,29 @@ function removeFragment(cur, end) {
 	renderApi.hostRemove(end)
 }
 
-// patch 子节点
+// patch 没有key的子节点, 因为没有key, 只能根据索引比较
 function patchUnKeyedChildren(c1, c2, container, parentAnchor, parentComponent) {
 	console.log('patchUnKeyedChildren')
 	const oldLenght = c1.length
 	const newLenght = c2.length
 	const commonLength = Math.min(oldLenght, newLenght)
+	// 循环公共长度, 进行patch
 	for (let i = 0; i < commonLength; i++) {
 		patch(c1[i], c2[i], container, parentAnchor, parentComponent)
 	}
 	if (oldLenght > newLenght) {
+		// 旧节点大于新节点, 需要删除
 		unmountChildren(c1.slice(commonLength), parentComponent)
 	} else {
+		// 旧节点小于新节点, 需要挂载
 		mountChildren(c2.slice(commonLength), container, parentAnchor, parentComponent)
 	}
 }
 
-// patch子节点 用到key, 新旧子节点做循环, 找到相同的就path, 如果位置变了就insert, 新的多了就创建, 旧的多了就删除
-function patchKeyedChildren(c1, c2, container, parentAnchor, parentComponent) {
-	console.log('patchKeyedChildren1')
-	debugger
-	// 控件换时间, 先循环老节点, 创建老节点map
+// 复用型diff patch有key的子节点, 新旧子节点做循环, 找到相同的就path, 如果位置变了就insert, 新的多了就创建, 旧的多了就删除
+function patchKeyedChildrenReuse(c1, c2, container, parentAnchor, parentComponent) {
+	console.log('patchKeyedChildren')
+	// 空间换时间, 先循环老节点, 创建老节点map
 	const map = new Map()
 	c1.forEach((prev, index) => {
 		map.set(prev.key, { prev, index })
@@ -432,6 +434,100 @@ function patchKeyedChildren(c1, c2, container, parentAnchor, parentComponent) {
 	map.forEach(({ prev }) => {
 		unmount(prev, parentComponent, null, true)
 	})
+}
+
+// 双端比较型diff
+function patchKeyedChildren (c1, c2, container, parentAnchor, parentComponent) {
+	// 声明四个指针, 分别指向旧元素第一个, 旧元素最后一个, 新元素第一个, 新元素最后一个
+	let oldStartIdx = 0
+	let oldEndIdx = c1.length - 1
+	let newStartIdx = 0
+	let newEndIdx = c2.length - 1
+	// 声明指针对应的VNode
+	let oldStartVNode = c1[oldStartIdx]
+	let oldEndVNode = c1[oldEndIdx]
+	let newStartVNode = c2[newStartIdx]
+	let newEndVNode = c2[newEndIdx]
+	// 旧元素第一个 小于等于 旧元素最后一个 且 新节点第一个 小于等于 新结点最后一个, 就说明有需要循环比较的节点存在
+	while (oldStartIdx <= oldEndIdx && newStartIdx <= newEndIdx) {
+		if (!oldStartVNode) {
+			// 如果节点不存在 证明这个节点刚才移动过, 只需要更新指针
+			oldStartVNode = c1[++oldStartIdx]
+		} else if (!oldEndVNode) {
+			// 如果节点不存在 证明这个节点刚才移动过, 只需要更新指针
+			oldEndVNode = c1[--oldEndIdx]
+		} else if (oldStartVNode.key === newStartVNode.key) {
+			// 首首对比
+			// 先进行patch更新
+			patch(oldStartVNode, newStartVNode, container, parentAnchor, parentComponent)
+			// 更新指针
+			// 旧节点第一位 向后移动一位
+			oldStartVNode = c1[++oldStartIdx]
+			// 新结点第一位 向后移动一位
+    		newStartVNode = c2[++newStartIdx]
+		} else if (oldEndVNode.key === newEndVNode.key) {
+			// 尾尾对比
+			// 先进行patch更新
+			patch(oldEndVNode, newEndVNode, container, parentAnchor, parentComponent)
+			// 不需要移动, 只需更新指针
+			// 旧节点最后一个和新节点最后一个 分别向前移动一位
+			oldEndVNode = c1[--oldEndIdx]
+			newEndVNode = c1[--newEndIdx]
+		} else if (oldStartVNode.key === newEndVNode.key) {
+			// 首尾对比
+			// 先进行patch更新
+			patch(oldStartVNode, newEndVNode, container, parentAnchor, parentComponent)
+			// 把旧元素的第一个 移动到 最后一位
+			container.insertBefore(oldStartVNode.el, oldEndVNode.el.nextSibling)
+			// 更新指针
+			// 旧节点第一位 向后移动一位
+			oldStartVNode = c1[++oldStartIdx]
+			// 新节点最后一位  向前移动一位
+			newEndVNode = c2[--newEndIdx]
+		} else if (oldEndVNode.key === newStartVNode.key) {
+			// 尾首对比
+			// 先进行patch更新
+			patch(oldEndVNode, newStartVNode, container, parentAnchor, parentComponent)
+			// 把旧节点的最后一个 移动到第一个
+			container.insertBefore(oldEndVNode.el, oldStartVNode.el)
+			// 更新指针
+			// 旧节点最后一个 向前移动一位
+			oldEndVNode = c1[--oldEndIdx]
+			// 新结点第一个 向后移动一位
+			newStartVNode = c2[++newStartIdx]
+		} else {
+			// 找到旧节点中 与新节点第一个 相同key的节点
+			const indexInOld = c1.findIndex(node => node.key === newStartVNode)
+			if (~indexInOld) {
+				// 如果找到了进行patch更新
+				const moveVNode = c1[indexInOld]
+				patch(moveVNode, newStartVNode, container, parentAnchor, parentComponent)
+				// 把此节点移动到 首位
+				container.insertBefore(moveVNode.el, oldStartVNode.el)
+				// 把此节点原来的位置置空, 置空的目的在下次循环到这里的时候 进行忽略处理
+				c1[indexInOld] = undefined
+			} else {
+				// 如果没找到, 则这个节点需要挂载, 挂载后的位置就是旧节点第一个之前, 也就是首位
+				patch(null, newStartVNode, container, oldStartVNode.el)
+			}
+			// 更新指针
+			// 新结点第一个向后移动一位
+			newStartVNode = c2[++newStartIdx]
+		}
+		// 循环结束后, 发现旧节点 末尾指针 小于 起始指针, 此时后可能, 新节点找不到相同key的节点, 而且还没有挂载
+		if (oldEndIdx < oldStartIdx) {
+			// 如果新节点首尾有一个或多个, 需要把这些没有对应key的节点 挂载起来
+			for (let i = newStartIdx; i <= newEndIdx; i++) {
+				patch(null, c2[i], container, oldStartVNode.el)
+			}
+		} else if (newEndIdx < newStartIdx) {
+			// 如果循环后, 新结点指针的末尾 小于 起始, 此时后可能 旧节点有找不到key, 而且没有卸载的
+			// 如果旧节点首尾有一个或多个, 需要把这些没有对应key的节点 卸载
+			for (let i = oldStartIdx; i <= oldEndIdx; i++) {
+				unmount(c1[i], parentComponent, null, true)
+			}
+		}
+	}
 }
 
 
