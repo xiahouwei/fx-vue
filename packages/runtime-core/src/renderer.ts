@@ -437,7 +437,7 @@ function patchKeyedChildrenReuse(c1, c2, container, parentAnchor, parentComponen
 }
 
 // 双端比较型diff
-function patchKeyedChildren (c1, c2, container, parentAnchor, parentComponent) {
+function patchKeyedChildrenDoubleEnd (c1, c2, container, parentAnchor, parentComponent) {
 	// 声明四个指针, 分别指向旧元素第一个, 旧元素最后一个, 新元素第一个, 新元素最后一个
 	let oldStartIdx = 0
 	let oldEndIdx = c1.length - 1
@@ -530,4 +530,165 @@ function patchKeyedChildren (c1, c2, container, parentAnchor, parentComponent) {
 	}
 }
 
+// 最长增长子序列的diff算法
+function patchKeyedChildren (c1, c2, container, parentAnchor, parentComponent) {
+	// j记录的是老元素 从首位开始 找相同key的新元素, 一旦找不到就停止
+	let j = 0
+	let prevVNode = c1[j]
+	let nextVNode = c2[j]
+	let prevEnd = c1.length - 1
+	let nextEnd = c2.length - 1
+	// 从开头比较, 如果key相同就pacth, 如果不同就停止
+	// 再从末尾比较, 如果key相同就patch, 如果不同就停止
+	outer: {
+		while (prevVNode.key === nextVNode.key) {
+			patch(prevVNode, nextVNode, container, parentAnchor, parentComponent)
+			j++
+			if (j > prevEnd || j > nextEnd) {
+				break outer
+			}
+			prevVNode = c1[j]
+			nextVNode = c2[j]
+		}
+		prevVNode = c1[prevEnd]
+		nextVNode = c2[nextEnd]
+		while (prevVNode.key === nextVNode.key) {
+			patch(prevVNode, nextVNode, container, parentAnchor, parentComponent)
+			prevEnd--
+			nextEnd--
+			if (j > prevEnd || j > nextEnd) {
+				break outer
+			}
+			prevVNode = c1[prevEnd]
+			nextVNode = c2[nextEnd]
+		}
+	}
+	// 相同的比较完了, 要把从索引j到末尾, 老元素不存在的新元素挂载
+	if (j > prevEnd && j <= nextEnd) {
+		const nextPos = nextEnd + 1
+		const refNode = nextPos < c2.length ? c2[nextPos].el : null
+		while (j <= nextEnd) {
+			patch(null, c2[j++], container, refNode, parentComponent)
+		}
+	} else if (j > nextEnd) {
+		// 再把从索引j开始, 新元素没有的老元素卸载
+		while (j <= prevEnd) {
+			unmount(c1[j], parentComponent, null, true)
+		}
+	} else {
+		// 下面是进行移动
+		// nextEnd是尾相等的索引, 他的前一位就是 开始比较不同的索引
+		const nextLeft = nextEnd - 1
+		// source数组作用是 生成一个 与 待比较新元素个数相同的 每个值为-1(-1证明没有相同key的老元素) 的数组 
+		const source = []
+		for (let i = 0; i < nextLeft; i++) {
+			source.push(-1)
+		}
+		const prevStart = j
+		const nextStart = j
+		let moved = false
+		let pos = 0
+		// 生成索引表
+		const keyIndex = {}
+		for (let i = nextStart; i <= nextEnd; i++) {
+			keyIndex[c2[i].key] = i
+		}
+		// 如果进行了patch, 就记录一下
+		let patched = 0
+		// 遍历旧子元素剩余未处理的节点
+		for (let i = prevStart; i <= prevEnd; i++) {
+			prevVNode = c1[i]
+			// 已更新的节点, 要小于需要更新的节点, 才会patch, 否则就删除
+			if (patched < nextLeft) {
+				// 通过索引表 找出新子元素 有相同key的节点的位置
+				const k = keyIndex[prevVNode.key]
+				// 如果找到了 就进行patch
+				if (typeof k !== 'undefined') {
+					nextVNode = c2[k]
+					patch(prevVNode, nextVNode, container, parentAnchor, parentComponent)
+					patched++
+					// 更新source, 把-1更新为 当前的索引
+					source[k - nextStart] = i
+					// 判断是否需要移动
+					if (k < pos) {
+						moved = true
+					} else {
+						pos = k
+					}
+				} else {
+					// 如果没找到就移除
+					unmount(prevVNode, parentComponent, null, true)
+				}
+			} else {
+				unmount(prevVNode, parentComponent, null, true)
+			}
 
+			if (moved) {
+				const seq = getSequence(source)
+				// j 指向最长递增子序列的最后一个值
+				let j = seq.length - 1
+				// 从后向前遍历新 children 中的剩余未处理节点
+				for (let i = nextLeft - 1; i >= 0; i--) {
+					if (i === -1) {
+						// 作为全新的节点挂载
+						const pos = i + nextStart
+						const nextVNode = c2[pos]
+						const nextPos = pos + 1
+						patch(null, nextVNode, container, nextPos < c2.length ? c2[nextPos].el : null, parentComponent)
+					} else if (i !== seq[j]) {
+						// 说明该节点需要移动
+						const pos = i + nextStart
+						const nextVNode = c2[pos]
+						const nextPos = pos + 1
+						container.insertBefore(nextVNode.el, nextPos < c2.length ? c2[nextPos].el : null)
+					} else {
+						// 当 i === seq[j] 时，说明该位置的节点不需要移动
+						// 并让 j 指向下一个位置
+						j--
+					}
+				}
+			}
+		}
+	}
+}
+
+function getSequence(arr: number[]): number[] {
+	const p = arr.slice()
+	const result = [0]
+	let i, j, u, v, c
+	const len = arr.length
+	for (i = 0; i < len; i++) {
+	  const arrI = arr[i]
+	  if (arrI !== 0) {
+		j = result[result.length - 1]
+		if (arr[j] < arrI) {
+		  p[i] = j
+		  result.push(i)
+		  continue
+		}
+		u = 0
+		v = result.length - 1
+		while (u < v) {
+		  c = ((u + v) / 2) | 0
+		  if (arr[result[c]] < arrI) {
+			u = c + 1
+		  } else {
+			v = c
+		  }
+		}
+		if (arrI < arr[result[u]]) {
+		  if (u > 0) {
+			p[i] = result[u - 1]
+		  }
+		  result[u] = i
+		}
+	  }
+	}
+	u = result.length
+	v = result[u - 1]
+	while (u-- > 0) {
+	  result[u] = v
+	  v = p[v]
+	}
+	return result
+  }
