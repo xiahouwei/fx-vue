@@ -9,6 +9,9 @@ export const Comment = Symbol('Comment')
 // 静态节点
 export const Static = Symbol('Static')
 
+// 格式化key, key不能为null, 但是可以为undefined
+const normalizeKey = ({ key }) => key != null ? key : null
+
 // 创建vnode
 export function createVNode(type, props = null, children?: any) {
 	// type 为 string : createVNode("div")
@@ -24,12 +27,20 @@ export function createVNode(type, props = null, children?: any) {
 				: 0
 
 	const vnode = {
-		el: null,
-		component: null,
-		key: props && props.key || null,
+		// vnode标识
+		__v_isVNode: true,
+		// skip标识
+    	__v_skip: true,
+		// vnode种类
 		type,
+		// vnode属性
 		props,
+		// vnode key
+		key: props && normalizeKey(props),
 		children,
+		component: null,
+		// dom元素
+		el: null,
 		shapeFlag,
 		// anchor是Fragment的专用属性
 		anchor: null

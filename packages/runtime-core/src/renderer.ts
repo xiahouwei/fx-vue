@@ -287,7 +287,7 @@ function patchChildren(n1, n2, container, anchor, parentComponent) {
 				if (c1[0] && c1[0].key != null && c2[0] && c2[0].key != null) {
 					patchKeyedChildren(c1, c2, container, anchor, parentComponent)
 				} else {
-					patchUnKeyedChildren(c1, c2, container, anchor, parentComponent)
+					patchUnkeyedChildren(c1, c2, container, anchor, parentComponent)
 				}
 			} else {
 				// 否则删除n1, 没有n2, 仅仅是删除n1
@@ -371,8 +371,10 @@ function removeFragment(cur, end) {
 }
 
 // patch 没有key的子节点, 因为没有key, 只能根据索引比较
-function patchUnKeyedChildren(c1, c2, container, parentAnchor, parentComponent) {
+function patchUnkeyedChildren(c1, c2, container, parentAnchor, parentComponent) {
 	console.log('patchUnKeyedChildren')
+	console.log(c1)
+	console.log(c2)
 	const oldLenght = c1.length
 	const newLenght = c2.length
 	const commonLength = Math.min(oldLenght, newLenght)
@@ -382,7 +384,7 @@ function patchUnKeyedChildren(c1, c2, container, parentAnchor, parentComponent) 
 	}
 	if (oldLenght > newLenght) {
 		// 旧节点大于新节点, 需要删除
-		unmountChildren(c1.slice(commonLength), parentComponent)
+		unmountChildren(c1.slice(commonLength), parentComponent, true)
 	} else {
 		// 旧节点小于新节点, 需要挂载
 		mountChildren(c2.slice(commonLength), container, parentAnchor, parentComponent)
@@ -392,6 +394,8 @@ function patchUnKeyedChildren(c1, c2, container, parentAnchor, parentComponent) 
 // 复用型diff patch有key的子节点, 新旧子节点做循环, 找到相同的就path, 如果位置变了就insert, 新的多了就创建, 旧的多了就删除
 function patchKeyedChildrenReuse(c1, c2, container, parentAnchor, parentComponent) {
 	console.log('patchKeyedChildren')
+	console.log(c1)
+	console.log(c2)
 	// 空间换时间, 先循环老节点, 创建老节点map
 	const map = new Map()
 	c1.forEach((prev, index) => {
@@ -532,6 +536,7 @@ function patchKeyedChildrenDoubleEnd (c1, c2, container, parentAnchor, parentCom
 
 // 最长增长子序列的diff算法
 function patchKeyedChildren (c1, c2, container, parentAnchor, parentComponent) {
+	debugger
 	// j记录的是老元素 从首位开始 找相同key的新元素, 一旦找不到就停止
 	let j = 0
 	let prevVNode = c1[j]
@@ -578,7 +583,7 @@ function patchKeyedChildren (c1, c2, container, parentAnchor, parentComponent) {
 	} else {
 		// 下面是进行移动
 		// nextEnd是尾相等的索引, 他的前一位就是 开始比较不同的索引
-		const nextLeft = nextEnd - 1
+		const nextLeft = nextEnd - j + 1
 		// source数组作用是 生成一个 与 待比较新元素个数相同的 每个值为-1(-1证明没有相同key的老元素) 的数组 
 		const source = []
 		for (let i = 0; i < nextLeft; i++) {
@@ -652,6 +657,8 @@ function patchKeyedChildren (c1, c2, container, parentAnchor, parentComponent) {
 	}
 }
 
+// 求最长增长子序列
+// https://en.wikipedia.org/wiki/Longest_increasing_subsequence
 function getSequence(arr: number[]): number[] {
 	const p = arr.slice()
 	const result = [0]

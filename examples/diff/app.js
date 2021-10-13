@@ -1,5 +1,11 @@
 import { h, Text, Fragment, render } from "../../node_modules/@fx-vue/vue/dist/vue.esm-bundler.js"
 
+const childrenList1 = Array.from({ length: 3 }, (_, i) => ({ id: i, name: i}))
+// const childrenList2 = childrenList1.splice(5, 1)
+const childrenList2 = childrenList1.splice(0, 2)
+console.log(childrenList1)
+console.log(childrenList2)
+
 const app2 = h(
 	"ul",
 	{
@@ -13,17 +19,8 @@ const app2 = h(
 		checked: '',
 		customer: false
 	},
-	[
-		h('li', {
-			key: '3'
-		}, '3'),
-		h('li', {
-			key: '1'
-		}, '1'),
-		h('li', {
-			key: '2'
-		}, '2')
-	]
+	childrenList2.map(item => h('li', { key: item.id }, item.name))
+	// childrenList2.map(item => h('li', null, item.name))
 )
 
 export default h(
@@ -41,16 +38,6 @@ export default h(
 		checked: '',
 		customer: false
 	},
-	[
-		h('li', {
-			key: '1'
-		}, '1'),
-		h('li', {
-			key: '2'
-		}, '2'),
-		h('li', {
-			key: '3'
-		}, '3')
-	]
-
+	childrenList1.map(item => h('li', { key: item.id }, item.name))
+	// childrenList1.map(item => h('li', null, item.name))
 )
