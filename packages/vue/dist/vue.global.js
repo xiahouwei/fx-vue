@@ -18,7 +18,7 @@ var VueShared = (function (exports) {
   // 空对象
   const EMPTY_OBJ = Object.freeze({});
   // 空数组
-  Object.freeze([]);
+  const EMPTY_ARR = Object.freeze([]);
   // 空函数
   const NOOP = () => { };
   // 永远返回false
@@ -574,133 +574,265 @@ var VueShared = (function (exports) {
       }
   }
   // 最长增长子序列的diff算法
+  // function patchKeyedChildren (c1, c2, container, parentAnchor, parentComponent) {
+  // 	debugger
+  // 	// j记录的是老元素 从首位开始 找相同key的新元素, 一旦找不到就停止
+  // 	let j = 0
+  // 	let prevVNode = c1[j]
+  // 	let nextVNode = c2[j]
+  // 	let prevEnd = c1.length - 1
+  // 	let nextEnd = c2.length - 1
+  // 	// 从开头比较, 如果key相同就pacth, 如果不同就停止
+  // 	// 再从末尾比较, 如果key相同就patch, 如果不同就停止
+  // 	outer: {
+  // 		while (prevVNode.key === nextVNode.key) {
+  // 			patch(prevVNode, nextVNode, container, parentAnchor, parentComponent)
+  // 			j++
+  // 			if (j > prevEnd || j > nextEnd) {
+  // 				break outer
+  // 			}
+  // 			prevVNode = c1[j]
+  // 			nextVNode = c2[j]
+  // 		}
+  // 		prevVNode = c1[prevEnd]
+  // 		nextVNode = c2[nextEnd]
+  // 		while (prevVNode.key === nextVNode.key) {
+  // 			patch(prevVNode, nextVNode, container, parentAnchor, parentComponent)
+  // 			prevEnd--
+  // 			nextEnd--
+  // 			if (j > prevEnd || j > nextEnd) {
+  // 				break outer
+  // 			}
+  // 			prevVNode = c1[prevEnd]
+  // 			nextVNode = c2[nextEnd]
+  // 		}
+  // 	}
+  // 	// 相同的比较完了, 要把从索引j到末尾, 老元素不存在的新元素挂载
+  // 	if (j > prevEnd && j <= nextEnd) {
+  // 		const nextPos = nextEnd + 1
+  // 		const refNode = nextPos < c2.length ? c2[nextPos].el : null
+  // 		while (j <= nextEnd) {
+  // 			patch(null, c2[j++], container, refNode, parentComponent)
+  // 		}
+  // 	} else if (j > nextEnd) {
+  // 		// 再把从索引j开始, 新元素没有的老元素卸载
+  // 		while (j <= prevEnd) {
+  // 			unmount(c1[j], parentComponent, null, true)
+  // 		}
+  // 	} else {
+  // 		// 下面是进行移动
+  // 		// nextEnd是尾相等的索引, 他的前一位就是 开始比较不同的索引
+  // 		const nextLeft = nextEnd - j + 1
+  // 		// source数组作用是 生成一个 与 待比较新元素个数相同的 每个值为-1(-1证明没有相同key的老元素) 的数组 
+  // 		const source = []
+  // 		for (let i = 0; i < nextLeft; i++) {
+  // 			source.push(-1)
+  // 		}
+  // 		const prevStart = j
+  // 		const nextStart = j
+  // 		let moved = false
+  // 		let pos = 0
+  // 		// 生成索引表
+  // 		const keyIndex = {}
+  // 		for (let i = nextStart; i <= nextEnd; i++) {
+  // 			keyIndex[c2[i].key] = i
+  // 		}
+  // 		// 如果进行了patch, 就记录一下
+  // 		let patched = 0
+  // 		// 遍历旧子元素剩余未处理的节点
+  // 		for (let i = prevStart; i <= prevEnd; i++) {
+  // 			prevVNode = c1[i]
+  // 			// 已更新的节点, 要小于需要更新的节点, 才会patch, 否则就删除
+  // 			if (patched < nextLeft) {
+  // 				// 通过索引表 找出新子元素 有相同key的节点的位置
+  // 				const k = keyIndex[prevVNode.key]
+  // 				// 如果找到了 就进行patch
+  // 				if (typeof k !== 'undefined') {
+  // 					nextVNode = c2[k]
+  // 					patch(prevVNode, nextVNode, container, parentAnchor, parentComponent)
+  // 					patched++
+  // 					// 更新source, 把-1更新为 当前的索引
+  // 					source[k - nextStart] = i
+  // 					// 判断是否需要移动
+  // 					if (k < pos) {
+  // 						moved = true
+  // 					} else {
+  // 						pos = k
+  // 					}
+  // 				} else {
+  // 					// 如果没找到就移除
+  // 					unmount(prevVNode, parentComponent, null, true)
+  // 				}
+  // 			} else {
+  // 				unmount(prevVNode, parentComponent, null, true)
+  // 			}
+  // 			if (moved) {
+  // 				const seq = getSequence(source)
+  // 				// j 指向最长递增子序列的最后一个值
+  // 				let j = seq.length - 1
+  // 				// 从后向前遍历新 children 中的剩余未处理节点
+  // 				for (let i = nextLeft - 1; i >= 0; i--) {
+  // 					if (i === -1) {
+  // 						// 作为全新的节点挂载
+  // 						const pos = i + nextStart
+  // 						const nextVNode = c2[pos]
+  // 						const nextPos = pos + 1
+  // 						patch(null, nextVNode, container, nextPos < c2.length ? c2[nextPos].el : null, parentComponent)
+  // 					} else if (i !== seq[j]) {
+  // 						// 说明该节点需要移动
+  // 						const pos = i + nextStart
+  // 						const nextVNode = c2[pos]
+  // 						const nextPos = pos + 1
+  // 						container.insertBefore(nextVNode.el, nextPos < c2.length ? c2[nextPos].el : null)
+  // 					} else {
+  // 						// 当 i === seq[j] 时，说明该位置的节点不需要移动
+  // 						// 并让 j 指向下一个位置
+  // 						j--
+  // 					}
+  // 				}
+  // 			}
+  // 		}
+  // 	}
+  // }
   function patchKeyedChildren(c1, c2, container, parentAnchor, parentComponent) {
-      debugger;
-      // j记录的是老元素 从首位开始 找相同key的新元素, 一旦找不到就停止
-      let j = 0;
-      let prevVNode = c1[j];
-      let nextVNode = c2[j];
-      let prevEnd = c1.length - 1;
-      let nextEnd = c2.length - 1;
-      // 从开头比较, 如果key相同就pacth, 如果不同就停止
-      // 再从末尾比较, 如果key相同就patch, 如果不同就停止
-      outer: {
-          while (prevVNode.key === nextVNode.key) {
-              patch(prevVNode, nextVNode, container, parentAnchor, parentComponent);
-              j++;
-              if (j > prevEnd || j > nextEnd) {
-                  break outer;
+      let i = 0;
+      const l2 = c2.length;
+      let e1 = c2.length - 1;
+      let e2 = c2.length - 1;
+      // 1.从首至尾依次对比
+      while (i <= e1 && i <= e2) {
+          const n1 = c1[i];
+          const n2 = c2[i];
+          if (isSameVNodeType(n1, n2)) {
+              patch(n1, n2, container, parentAnchor, parentComponent);
+          }
+          else {
+              break;
+          }
+          i++;
+      }
+      // 2.从尾至首依次对比
+      while (i <= e1 && i <= e2) {
+          const n1 = c1[e1];
+          const n2 = c2[e2];
+          if (n1 && n2 && isSameVNodeType(n1, n2)) {
+              patch(n1, n2, container, parentAnchor, parentComponent);
+          }
+          else {
+              break;
+          }
+          e1--;
+          e2--;
+      }
+      // 3.要把从比较结束索引到末尾, 老元素不存在的新元素挂载(公共子序列挂载)
+      if (i > e1) {
+          if (i <= e2) {
+              const nextPos = e2 + 1;
+              const anchor = nextPos < l2 ? c2[nextPos].el : parentAnchor;
+              while (i <= e2) {
+                  patch(null, c2[i], container, anchor, parentComponent);
+                  i++;
               }
-              prevVNode = c1[j];
-              nextVNode = c2[j];
-          }
-          prevVNode = c1[prevEnd];
-          nextVNode = c2[nextEnd];
-          while (prevVNode.key === nextVNode.key) {
-              patch(prevVNode, nextVNode, container, parentAnchor, parentComponent);
-              prevEnd--;
-              nextEnd--;
-              if (j > prevEnd || j > nextEnd) {
-                  break outer;
-              }
-              prevVNode = c1[prevEnd];
-              nextVNode = c2[nextEnd];
           }
       }
-      // 相同的比较完了, 要把从索引j到末尾, 老元素不存在的新元素挂载
-      if (j > prevEnd && j <= nextEnd) {
-          const nextPos = nextEnd + 1;
-          const refNode = nextPos < c2.length ? c2[nextPos].el : null;
-          while (j <= nextEnd) {
-              patch(null, c2[j++], container, refNode, parentComponent);
+      // 4.再把从比较结束索引开始, 新元素没有的老元素卸载(公共子序列卸载)
+      else if (i > e2) {
+          while (i <= e1) {
+              unmount(c1[i], parentComponent, null, true);
+              i++;
           }
       }
-      else if (j > nextEnd) {
-          // 再把从索引j开始, 新元素没有的老元素卸载
-          while (j <= prevEnd) {
-              unmount(c1[j], parentComponent, null, true);
-          }
-      }
+      // 5.未知序列的处理
       else {
-          // 下面是进行移动
-          // nextEnd是尾相等的索引, 他的前一位就是 开始比较不同的索引
-          const nextLeft = nextEnd - j + 1;
-          // source数组作用是 生成一个 与 待比较新元素个数相同的 每个值为-1(-1证明没有相同key的老元素) 的数组 
-          const source = [];
-          for (let i = 0; i < nextLeft; i++) {
-              source.push(-1);
+          const s1 = i; // prev starting index
+          const s2 = i; // next starting index
+          // 5.1 build key:index map for newChildren
+          const keyToNewIndexMap = new Map();
+          for (i = s2; i < e2; i++) {
+              const nextChild = c2[i];
+              if (!nextChild) {
+                  break;
+              }
+              if (nextChild.key !== null) {
+                  keyToNewIndexMap.set(nextChild.key, i);
+              }
           }
-          const prevStart = j;
-          const nextStart = j;
-          let moved = false;
-          let pos = 0;
-          // 生成索引表
-          const keyIndex = {};
-          for (let i = nextStart; i <= nextEnd; i++) {
-              keyIndex[c2[i].key] = i;
-          }
-          // 如果进行了patch, 就记录一下
+          // 5.2 loop through old children left to be patched and try to patch
+          let j;
           let patched = 0;
-          // 遍历旧子元素剩余未处理的节点
-          for (let i = prevStart; i <= prevEnd; i++) {
-              prevVNode = c1[i];
-              // 已更新的节点, 要小于需要更新的节点, 才会patch, 否则就删除
-              if (patched < nextLeft) {
-                  // 通过索引表 找出新子元素 有相同key的节点的位置
-                  const k = keyIndex[prevVNode.key];
-                  // 如果找到了 就进行patch
-                  if (typeof k !== 'undefined') {
-                      nextVNode = c2[k];
-                      patch(prevVNode, nextVNode, container, parentAnchor, parentComponent);
-                      patched++;
-                      // 更新source, 把-1更新为 当前的索引
-                      source[k - nextStart] = i;
-                      // 判断是否需要移动
-                      if (k < pos) {
-                          moved = true;
-                      }
-                      else {
-                          pos = k;
-                      }
-                  }
-                  else {
-                      // 如果没找到就移除
-                      unmount(prevVNode, parentComponent, null, true);
-                  }
+          const toBePatched = e2 - s2 + 1;
+          let moved = false;
+          let maxNewIndexSoFar = 0;
+          const newIndexToOldIndexMap = new Array(toBePatched);
+          for (i = 0; i < toBePatched; i++)
+              newIndexToOldIndexMap[i] = 0;
+          for (i = s1; i <= e1; i++) {
+              const prevChild = c1[i];
+              if (!prevChild) {
+                  break;
+              }
+              if (patched >= toBePatched) {
+                  unmount(prevChild, parentComponent, null, true);
+                  continue;
+              }
+              let newIndex;
+              if (prevChild.key != null) {
+                  newIndex = keyToNewIndexMap.get(prevChild.key);
               }
               else {
-                  unmount(prevVNode, parentComponent, null, true);
+                  // key-less node, try to locate a key-less node of the same type
+                  for (j = s2; j <= e2; j++) {
+                      if (newIndexToOldIndexMap[j - s2] === 0 && isSameVNodeType(prevChild, c2[j])) {
+                          newIndex = j;
+                          break;
+                      }
+                  }
               }
-              if (moved) {
-                  const seq = getSequence(source);
-                  // j 指向最长递增子序列的最后一个值
-                  let j = seq.length - 1;
-                  // 从后向前遍历新 children 中的剩余未处理节点
-                  for (let i = nextLeft - 1; i >= 0; i--) {
-                      if (i === -1) {
-                          // 作为全新的节点挂载
-                          const pos = i + nextStart;
-                          const nextVNode = c2[pos];
-                          const nextPos = pos + 1;
-                          patch(null, nextVNode, container, nextPos < c2.length ? c2[nextPos].el : null, parentComponent);
-                      }
-                      else if (i !== seq[j]) {
-                          // 说明该节点需要移动
-                          const pos = i + nextStart;
-                          const nextVNode = c2[pos];
-                          const nextPos = pos + 1;
-                          container.insertBefore(nextVNode.el, nextPos < c2.length ? c2[nextPos].el : null);
-                      }
-                      else {
-                          // 当 i === seq[j] 时，说明该位置的节点不需要移动
-                          // 并让 j 指向下一个位置
-                          j--;
-                      }
+              if (newIndex === undefined) {
+                  unmount(prevChild, parentComponent, null, true);
+              }
+              else {
+                  newIndexToOldIndexMap[newIndex - s2] = i + 1;
+                  if (newIndex >= maxNewIndexSoFar) {
+                      maxNewIndexSoFar = newIndex;
+                  }
+                  else {
+                      moved = true;
+                  }
+                  patch(prevChild, c2[newIndex], container, null, parentComponent);
+                  patched++;
+              }
+          }
+          // 5.3 move and mount
+          const increasingNewIndexSequence = moved ? getSequence(newIndexToOldIndexMap) : EMPTY_ARR;
+          j = increasingNewIndexSequence.length - 1;
+          // looping backwards so that we can use last patched node as anchor
+          for (i = toBePatched - 1; i >= 0; i--) {
+              const nextIndex = s2 + i;
+              const nextChild = c2[nextIndex];
+              const anchor = nextIndex + 1 < l2 ? c2[nextIndex + 1].el : parentAnchor;
+              if (newIndexToOldIndexMap[i] === 0) {
+                  // mount new
+                  patch(null, nextChild, container, anchor, parentComponent);
+              }
+              else if (moved) {
+                  // move if:
+                  // There is no stable subsequence (e.g. a reverse)
+                  // OR current node is not among the stable sequence
+                  if (j < 0 || i !== increasingNewIndexSequence[j]) {
+                      move(nextChild, container, anchor);
+                  }
+                  else {
+                      j--;
                   }
               }
           }
       }
   }
+  const move = (vnode, container, anchor, moveType, parentSuspense = null) => {
+      const { el, type, children, shapeFlag } = vnode;
+      renderApi.hostInsert(el, container, anchor);
+  };
   // 求最长增长子序列
   // https://en.wikipedia.org/wiki/Longest_increasing_subsequence
   function getSequence(arr) {
