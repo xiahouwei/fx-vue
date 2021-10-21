@@ -1,8 +1,14 @@
-import { extend, hasChanged, hasOwn, isArray, isIntegerKey, isObject } from "@fx-vue/shared"
-import { track, trigger } from "./effect"
+import { extend, hasChanged, hasOwn, isArray, isIntegerKey, isObject, isSymbol } from "@fx-vue/shared"
+import { ITERATE_KEY, track, trigger } from "./effect"
 import { TrackOpTypes, TriggerOpTypes } from "./operations"
 import { reactive, readonly } from "./reactive"
 
+// 收集Symbol的内置方法, 用于判断某个key是否为Symbol的内置方法
+const builtInSymbols = new Set(
+    Object.getOwnPropertyNames(Symbol)
+        .map(key => Symbol[key])
+        .filter(isSymbol)
+)
 
 // 创建get
 const get = createGetter()
@@ -55,10 +61,43 @@ function createSetter (shallow = false) {
         return result
     }
 }
+
+// 删除deleteProperty
+function deleteProperty (target, key) {
+    // 判断key是否存在
+    const hasKey = hasOwn(target, key)
+    // 缓存原始值
+    const oldValue = target[key]
+    // 执行删除操作
+    const result = Reflect.deleteProperty(target, key)
+    // 如果删除成功, 且target存在key 则进行trigger, 触发依赖
+    if (result && hasKey) {
+        trigger(target, TriggerOpTypes.DELETE, key, undefined, oldValue)
+    }
+    return result
+}
+
+function has (target, key) {
+    const result = Reflect.has(target, key)
+	// 如果不key不是Symbol类型, 或者不是Symbol的内置参数, 则收集依赖
+    if (!isSymbol(key) || !builtInSymbols.has(key)) {
+		track(target, TrackOpTypes.HAS, key)
+	}
+	return result
+}
+
+function ownKeys (target) {
+    // 如果迭代数组, 用length作为key收集依赖, 其他的用便准迭代key收集
+    track(target, TrackOpTypes.ITERATE, isArray(target) ? 'length' : ITERATE_KEY)
+    return Reflect.ownKeys(target)
+}
 // 对应reactive的handler参数
 export const mutableHandlers = {
     get,
-    set
+    set,
+    deleteProperty,
+	has,
+    ownKeys
 }
 // 对应readonly的handler参数
 export const readonlyHandlers = {

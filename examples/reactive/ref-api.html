@@ -10,16 +10,18 @@
     <div id="app"></div>
     <script src="../../node_modules/@fx-vue/reactivity/dist/reactivity.global.js"></script>
     <script>
-        console.log(VueReactivity)
         let { reactive, effect, ref, shallowRef } = VueReactivity
-        let name = ref({ name: 'fx'})
-        console.log(name)
+        // let name = ref({ name: 'fx'})
+        let count = ref(0)
+        // console.log(name)
         effect(() => {
-            app.innerHTML = name.value.name
+            // app.innerHTML = name.value.name
+            app.innerHTML = count.value
         })
         setTimeout(() => {
             // name.value = { name: 'fxxfxfxfxfxf' }
-            name.value.name = 'fxxfxfxfxfxf'
+            // name.value.name = 'fxxfxfxfxfxf'
+            count.value++
         }, 2000)
     </script>
 </body>

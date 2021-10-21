@@ -1,4 +1,4 @@
-import { isObject } from "@fx-vue/shared"
+import { isObject, toRawType } from "@fx-vue/shared"
 import {
     mutableHandlers,
     shallowReactiveHandlers,
@@ -13,6 +13,38 @@ export const enum ReactiveFlags {
     IS_REACTIVE = '__v_isReactive',
     IS_READONLY = '__v_isReadonly',
     RAW = '__v_raw'
+}
+// target类型枚举
+const enum TargetType {
+    // 无效
+    INVALID = 0,
+    // Object, Array
+    COMMON = 1,
+    // Map, Set, WeakMap, WeakSet
+    COLLECTION = 2
+}
+
+// 过去target类型
+function targetTypeMap (rawType) {
+    switch (rawType) {
+        case 'Object':
+        case 'Array':
+            return TargetType.COMMON
+        case 'Map':
+        case 'Set':
+        case 'WeakMap':
+        case 'WeakSet':
+            return TargetType.COLLECTION
+        default:
+            return TargetType.INVALID
+    }
+}
+
+function getTargetType (value) {
+    // 如果target 有忽略标记, 或者被冻结, 则属于无效类型, 否则根据原始类型来判断
+    return value[ReactiveFlags.SKIP] || !Object.isExtensible(value)
+        ? TargetType.INVALID
+        : targetTypeMap(toRawType(value))
 }
   
 
@@ -32,6 +64,7 @@ export function createReactiveObject (target, isReadonly, baseHandlers) {
         return exisitProxy
     }
     // 创建proxy实例, 进行拦截
+    // @TODO baseHandlers还要考虑集合的情况(map, set, weakmap, weakset)
     const proxy = new Proxy(target, baseHandlers)
     // 缓存
     proxyMap.set(target, proxy)

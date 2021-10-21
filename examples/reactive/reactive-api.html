@@ -1,26 +1,64 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Document</title>
 </head>
+
 <body>
-    <div id="app"></div>
-    <script src="../../node_modules/@fx-vue/reactivity/dist/reactivity.global.js"></script>
-    <script>
-        console.log(VueReactivity)
-        let { reactive, effect } = VueReactivity
-        let state = reactive({name: 'dg', age: { n: 12 }, arr: [1, 2, 3]})
-        effect(() => {
-            // app.innerHTML = state.name + '=========' + state.age.n
-            app.innerHTML = state.arr[2]
-        })
-        setTimeout(() => {
-            // state.name = 'fxfxfxf'
-            state.arr.length = 2
-        }, 2000)
-    </script>
+	<div id="app"></div>
+	<script src="../../node_modules/@fx-vue/reactivity/dist/reactivity.global.js"></script>
+	<script>
+		let { reactive, effect } = VueReactivity
+		const obj = reactive({ text: 'hello', obj: { msg: 'world' } })
+
+		// 普通key的更新
+		const testKeyUpdate = function () {
+			effect(() => {
+				app.innerHTML = obj.text
+			})
+			setTimeout(() => {
+				obj.text+= ' world'
+			}, 2000)
+		}
+		// 深层key的更新
+		const deepKeyUpdate = function () {
+			effect(() => {
+				app.innerHTML = obj.obj.msg
+			})
+			setTimeout(() => {
+				obj.obj.msg += ' hello'
+			}, 2000)
+		}
+		
+		// 对象迭代的更新
+		const objIntrateUpdate = function () {
+			effect(() => {
+				app.innerHTML = Object.keys(obj)
+			})
+			setTimeout(() => {
+				obj.aaa = '111'
+			}, 2000)
+		}
+
+		// 对象是否存在key的更新
+		const hasKeyUpdate = function () {
+			effect(() => {
+				app.innerHTML = 'has' in obj ? '有了' : '没有'
+			})
+			setTimeout(() => {
+				obj.has = '有了'
+			}, 2000)
+		}
+
+		// testKeyUpdate()
+		// deepKeyUpdate()
+		// objIntrateUpdate()
+		hasKeyUpdate()
+	</script>
 </body>
+
 </html>

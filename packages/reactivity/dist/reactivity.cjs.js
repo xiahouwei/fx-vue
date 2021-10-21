@@ -15,18 +15,28 @@ const hasOwnProperty = Object.prototype.hasOwnProperty;
 const hasOwn = (val = {}, key) => hasOwnProperty.call(val, key);
 // 判断是数组
 const isArray = Array.isArray;
+// 判断是map
+const isMap = (val) => toTypeString(val) === '[object Map]';
 // 判断是function
 const isFunction = (val) => typeof val === 'function';
 // 判断是string
 const isString = (val) => typeof val === 'string';
+// 判断是symbol
+const isSymbol = (val) => typeof val === 'symbol';
 // 判断是对象
 const isObject = (val) => val !== null && typeof val === 'object';
+const objectToString = Object.prototype.toString;
+const toTypeString = (value) => objectToString.call(value);
 // 判断是否为字符串类型的正整数, 常用于key
 const isIntegerKey = (key) => isString(key) && key !== 'NaN' && key[0] !== '-' && '' + parseInt(key, 10) === key;
 // 判断是否发生变化
 const hasChanged = (value, oldValue) => value !== oldValue && (value === value || oldValue === oldValue);
 
+// 迭代行为专用key
+const ITERATE_KEY = Symbol('');
+// effect栈
 const effectStack = [];
+// 当前要收集的effect
 let activeEffect;
 // 副作用函数
 function effect(fn, options = {}) {
@@ -41,9 +51,13 @@ function effect(fn, options = {}) {
 let uid = 0;
 function creatReactiveEffect(fn, options) {
     const effect = function () {
+        // 避免重复收集
         if (!effectStack.includes(effect)) {
             cleanup(effect);
-            // 通过入栈, 出栈保证手机effect是正确的, 避免嵌套effect情况下收集错误
+            // 通过入栈, 出栈保证收集effect是正确的, 避免嵌套effect情况下收集错误
+            // 因为如果是effect内嵌套effect 如 effect(() => { effect(() => {}) })
+            // 缓存activeEffect后 执行fn 就会执行下层的effect, 这时有可能还没有触发上层的track, 就已经更新了activeEffect
+            // 这样当上层再track收集依赖的时候,activeEffect就不正确了
             try {
                 effectStack.push(effect);
                 activeEffect = effect;
@@ -97,7 +111,7 @@ function track(target, type, key) {
     if (!dep) {
         depsMap.set(key, (dep = new Set()));
     }
-    // 这里就是真正收集依赖了
+    // 这里就是真正收集依赖了, 且避免重复收集
     if (!dep.has(activeEffect)) {
         dep.add(activeEffect);
         // 这里的收集用作clean之用,  deps是array,里面每个元素是dep dep是set, 里面每个元素是effect
@@ -114,6 +128,7 @@ function trigger(target, type, key, newValue, oldValue, oldTarget) {
     }
     // 通过set去重, 就不会重复执行了 这里是针对effect回调内的多次取值
     const effects = new Set();
+    // 声明add用于收集要触发的effect, 通过add收集起来, 然后统一执行
     const add = (effectsAdd) => {
         if (effectsAdd) {
             // 避免死循环
@@ -136,16 +151,34 @@ function trigger(target, type, key, newValue, oldValue, oldTarget) {
         });
     }
     else {
-        // 如果存在key 就是修改
+        // 2.如果存在key 就是修改
         if (key !== undefined) {
             add(depsMap.get(key));
         }
         switch (type) {
             // 新增
             case "add" /* ADD */:
+                // 如果是不是数组, 触发迭代更新
+                if (!isArray(target)) {
+                    add(depsMap.get(ITERATE_KEY));
+                }
                 // 如果添加数组的下标, 就触发length的更新
-                if (isArray(target) && isIntegerKey(key)) {
+                else if (isIntegerKey(key)) {
                     add(depsMap.get('length'));
+                }
+                break;
+            // 删除
+            case "delete" /* DELETE */:
+                // 如果是不是数组, 触发迭代更新
+                if (!isArray(target)) {
+                    add(depsMap.get(ITERATE_KEY));
+                }
+                break;
+            // 修改
+            case "set" /* SET */:
+                // 如果是Map, 修改操作也要触发迭代的更新
+                if (isMap(target)) {
+                    add(depsMap.get(ITERATE_KEY));
                 }
                 break;
         }
@@ -164,6 +197,10 @@ function trigger(target, type, key, newValue, oldValue, oldTarget) {
     effects.forEach(run);
 }
 
+// 收集Symbol的内置方法, 用于判断某个key是否为Symbol的内置方法
+const builtInSymbols = new Set(Object.getOwnPropertyNames(Symbol)
+    .map(key => Symbol[key])
+    .filter(isSymbol));
 // 创建get
 const get = createGetter();
 const shallowGet = createGetter(false, true);
@@ -213,10 +250,40 @@ function createSetter(shallow = false) {
         return result;
     };
 }
+// 删除deleteProperty
+function deleteProperty(target, key) {
+    // 判断key是否存在
+    const hasKey = hasOwn(target, key);
+    // 缓存原始值
+    target[key];
+    // 执行删除操作
+    const result = Reflect.deleteProperty(target, key);
+    // 如果删除成功, 且target存在key 则进行trigger, 触发依赖
+    if (result && hasKey) {
+        trigger(target, "delete" /* DELETE */, key, undefined);
+    }
+    return result;
+}
+function has(target, key) {
+    const result = Reflect.has(target, key);
+    // 如果不key不是Symbol类型, 或者不是Symbol的内置参数, 则收集依赖
+    if (!isSymbol(key) || !builtInSymbols.has(key)) {
+        track(target, "has" /* HAS */, key);
+    }
+    return result;
+}
+function ownKeys(target) {
+    // 如果迭代数组, 用length作为key收集依赖, 其他的用便准迭代key收集
+    track(target, "iterate" /* ITERATE */, isArray(target) ? 'length' : ITERATE_KEY);
+    return Reflect.ownKeys(target);
+}
 // 对应reactive的handler参数
 const mutableHandlers = {
     get,
-    set
+    set,
+    deleteProperty,
+    has,
+    ownKeys
 };
 // 对应readonly的handler参数
 const readonlyHandlers = {
@@ -256,6 +323,7 @@ function createReactiveObject(target, isReadonly, baseHandlers) {
         return exisitProxy;
     }
     // 创建proxy实例, 进行拦截
+    // @TODO baseHandlers还要考虑集合的情况(map, set, weakmap, weakset)
     const proxy = new Proxy(target, baseHandlers);
     // 缓存
     proxyMap.set(target, proxy);
@@ -280,6 +348,7 @@ function ref(value) {
 function shallowRef(value) {
     return createRef(value, true);
 }
+// 如果传入对象, 则返回响应式的对象
 const convert = (value) => isObject(value) ? reactive(value) : value;
 // ref类
 class RefImpl {
@@ -379,7 +448,7 @@ class ComputedRefImpl {
                 }
             }
         });
-        // 设置只读标记
+        // 设置只读标记, 阻止computed实例被reactive
         this["__v_isReadonly" /* IS_READONLY */] = isReadonly;
     }
     // 通过代理value, 来对computed进行依赖收集
@@ -390,7 +459,7 @@ class ComputedRefImpl {
             this._value = this.effect();
             this._dirty = false;
             // 收集computed的value属性
-            track(computed, "get" /* GET */, 'value');
+            track(this, "get" /* GET */, 'value');
         }
         return this._value;
     }

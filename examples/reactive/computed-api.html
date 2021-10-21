@@ -10,18 +10,20 @@
     <div id="app"></div>
     <script src="../../node_modules/@fx-vue/reactivity/dist/reactivity.global.js"></script>
     <script>
-        let { reactive, effect, computed } = VueReactivity
-        let state = reactive({name: 'dg', age: 12, arr: [1, 2, 3]})
-        let age = computed(() => {
-            console.log('ok')
-            return state.age * 2
-        })
+        let { reactive, ref, effect, computed } = VueReactivity
+        // let state = reactive({name: 'dg', age: 12, arr: [1, 2, 3]})
+        // let age = computed(() => {
+        //     return state.age * 2
+        // })
+        const refCount = ref(0)
+        const refDoubleCount = computed(() => refCount.value * 2)
         effect(() => {
-            app.innerHTML = age.value
+            // app.innerHTML = age.value
+            app.innerHTML = refDoubleCount.value
         })
         setTimeout(() => {
-            console.log(age.value)
-            state.age = 2000
+            // state.age = 2000
+            refCount.value++
         }, 2000)
     </script>
 </body>

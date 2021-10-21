@@ -1,7 +1,12 @@
-import { isArray, isIntegerKey } from "@fx-vue/shared"
+import { isArray, isIntegerKey, isMap } from "@fx-vue/shared"
 import { TriggerOpTypes } from "./operations"
 
+// 迭代行为专用key
+export const ITERATE_KEY = Symbol('')
+
+// effect栈
 const effectStack = []
+// 当前要收集的effect
 let activeEffect
 
 // 副作用函数
@@ -29,9 +34,13 @@ let uid = 0
 
 function creatReactiveEffect (fn, options) {
 	const effect = function () {
+		// 避免重复收集
 		if (!effectStack.includes(effect)) {
 			cleanup(effect)
-			// 通过入栈, 出栈保证手机effect是正确的, 避免嵌套effect情况下收集错误
+			// 通过入栈, 出栈保证收集effect是正确的, 避免嵌套effect情况下收集错误
+			// 因为如果是effect内嵌套effect 如 effect(() => { effect(() => {}) })
+			// 缓存activeEffect后 执行fn 就会执行下层的effect, 这时有可能还没有触发上层的track, 就已经更新了activeEffect
+			// 这样当上层再track收集依赖的时候,activeEffect就不正确了
 			try {
 				effectStack.push(effect)
 				activeEffect = effect
@@ -86,7 +95,7 @@ export function track (target, type, key) {
 	if (!dep) {
 		depsMap.set(key, (dep = new Set()))
 	}
-	// 这里就是真正收集依赖了
+	// 这里就是真正收集依赖了, 且避免重复收集
 	if (!dep.has(activeEffect)) {
 		dep.add(activeEffect)
 		// 这里的收集用作clean之用,  deps是array,里面每个元素是dep dep是set, 里面每个元素是effect
@@ -111,6 +120,7 @@ export function trigger (
 	}
 	// 通过set去重, 就不会重复执行了 这里是针对effect回调内的多次取值
 	const effects = new Set()
+	// 声明add用于收集要触发的effect, 通过add收集起来, 然后统一执行
 	const add = (effectsAdd) => {
 		if (effectsAdd) {
 			// 避免死循环
@@ -132,7 +142,7 @@ export function trigger (
 			}
 		})
 	} else {
-		// 如果存在key 就是修改
+		// 2.如果存在key 就是修改
 		if (key !== undefined) {
 			add(depsMap.get(key))
 		}
@@ -140,17 +150,29 @@ export function trigger (
 		switch (type) {
 			// 新增
 			case TriggerOpTypes.ADD:
+				// 如果是不是数组, 触发迭代更新
+				if (!isArray(target)) {
+					add(depsMap.get(ITERATE_KEY))
+				}
 				// 如果添加数组的下标, 就触发length的更新
-				if (isArray(target) && isIntegerKey(key)) {
+				else if (isIntegerKey(key)) {
 					add(depsMap.get('length'))
 				}
-			break
+				break
 			// 删除
 			case TriggerOpTypes.DELETE:
-			break
+				// 如果是不是数组, 触发迭代更新
+				if (!isArray(target)) {
+					add(depsMap.get(ITERATE_KEY))
+				}
+				break
 			// 修改
 			case TriggerOpTypes.SET:
-			break
+				// 如果是Map, 修改操作也要触发迭代的更新
+				if (isMap(target)) {
+					add(depsMap.get(ITERATE_KEY))
+				}
+				break
 		}
 	}
 	const run = function (effect) {

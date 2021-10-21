@@ -11,6 +11,7 @@ export function shallowRef (value) {
     return createRef(value, true)
 }
 
+// 如果传入对象, 则返回响应式的对象
 const convert = (value) => isObject(value) ? reactive(value) : value
 
 // ref类

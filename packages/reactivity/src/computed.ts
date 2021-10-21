@@ -34,7 +34,7 @@ class ComputedRefImpl {
                 }
             }
         })
-        // 设置只读标记
+        // 设置只读标记, 阻止computed实例被reactive
         this[ReactiveFlags.IS_READONLY] = isReadonly
     }
     
@@ -46,7 +46,7 @@ class ComputedRefImpl {
             this._value = this.effect()
             this._dirty = false
             // 收集computed的value属性
-            track(computed, TrackOpTypes.GET, 'value')
+            track(this, TrackOpTypes.GET, 'value')
         }
         return this._value
     }
