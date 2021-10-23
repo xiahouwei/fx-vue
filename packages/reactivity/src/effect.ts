@@ -11,9 +11,11 @@ let activeEffect
 
 // 副作用函数
 export function effect (fn, options:any = {}) {
+	console.log('创建effect')
 	// 创建effect, 依赖收集
 	const effect = creatReactiveEffect(fn, options)
 	if (!options.lazy) {
+		console.log('effect不是lazy的, 执行effect')
 		effect()
 	}
 	return effect
@@ -34,6 +36,7 @@ let uid = 0
 
 function creatReactiveEffect (fn, options) {
 	const effect = function () {
+		console.log('执行effect, 通过堆栈来缓存当前activeEffect')
 		// 避免重复收集
 		if (!effectStack.includes(effect)) {
 			cleanup(effect)
@@ -42,10 +45,13 @@ function creatReactiveEffect (fn, options) {
 			// 缓存activeEffect后 执行fn 就会执行下层的effect, 这时有可能还没有触发上层的track, 就已经更新了activeEffect
 			// 这样当上层再track收集依赖的时候,activeEffect就不正确了
 			try {
+				console.log('effect堆栈 push effect, 设置为activeEffect')
 				effectStack.push(effect)
 				activeEffect = effect
+				console.log('执行effect内的fn')
 				return fn() // 执行函数, 通过取值, 触发get
 			} finally {
+				console.log('effect堆栈 pop effect, activeEffect设置为堆栈最后一个')
 				effectStack.pop()
 				activeEffect = effectStack[effectStack.length - 1]
 			}
@@ -82,7 +88,9 @@ function cleanup(effect) {
 // 依赖收集, 让某个对象的属性, 收集它对应的effect
 const targetMap = new WeakMap()
 export function track (target, type, key) {
+	console.log('执行track, 收集effect', target, key)
 	if (activeEffect === undefined) {
+		console.log('当前没有任何activeEffect, 停止track')
 		return
 	}
 	// 通过target获取它对应的dep
@@ -113,6 +121,8 @@ export function trigger (
 	oldValue?: unknown,
 	oldTarget?: unknown
 ) {
+	debugger
+	console.log('执行trigger', target, key)
 	// 如果触发的属性没有收集过effect, 则忽略
 	const depsMap = targetMap.get(target)
 	if (!depsMap) {
@@ -178,8 +188,10 @@ export function trigger (
 	const run = function (effect) {
 		// 如果存在scheduler调度函数, 则执行调度函数, 调度函数内部可能实行effect, 也可能不执行
 		if (effect.options.scheduler) {
+			console.log('发现effect有调度器, 执行调度器')
 			effect.options.scheduler(effect)
 		} else {
+			console.log('effect没有调度器 执行effect')
 			// 否则直接执行effect
 			effect()
 		}

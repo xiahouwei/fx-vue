@@ -36,9 +36,11 @@ const effectStack = [];
 let activeEffect;
 // 副作用函数
 function effect(fn, options = {}) {
+    console.log('创建effect');
     // 创建effect, 依赖收集
     const effect = creatReactiveEffect(fn, options);
     if (!options.lazy) {
+        console.log('effect不是lazy的, 执行effect');
         effect();
     }
     return effect;
@@ -47,6 +49,7 @@ function effect(fn, options = {}) {
 let uid = 0;
 function creatReactiveEffect(fn, options) {
     const effect = function () {
+        console.log('执行effect, 通过堆栈来缓存当前activeEffect');
         // 避免重复收集
         if (!effectStack.includes(effect)) {
             cleanup(effect);
@@ -55,11 +58,14 @@ function creatReactiveEffect(fn, options) {
             // 缓存activeEffect后 执行fn 就会执行下层的effect, 这时有可能还没有触发上层的track, 就已经更新了activeEffect
             // 这样当上层再track收集依赖的时候,activeEffect就不正确了
             try {
+                console.log('effect堆栈 push effect, 设置为activeEffect');
                 effectStack.push(effect);
                 activeEffect = effect;
+                console.log('执行effect内的fn');
                 return fn(); // 执行函数, 通过取值, 触发get
             }
             finally {
+                console.log('effect堆栈 pop effect, activeEffect设置为堆栈最后一个');
                 effectStack.pop();
                 activeEffect = effectStack[effectStack.length - 1];
             }
@@ -94,7 +100,9 @@ function cleanup(effect) {
 // 依赖收集, 让某个对象的属性, 收集它对应的effect
 const targetMap = new WeakMap();
 function track(target, type, key) {
+    console.log('执行track, 收集effect', target, key);
     if (activeEffect === undefined) {
+        console.log('当前没有任何activeEffect, 停止track');
         return;
     }
     // 通过target获取它对应的dep
@@ -117,6 +125,8 @@ function track(target, type, key) {
 }
 // 触发更新 执行属性对应的effect
 function trigger(target, type, key, newValue, oldValue, oldTarget) {
+    debugger;
+    console.log('执行trigger', target, key);
     // 如果触发的属性没有收集过effect, 则忽略
     const depsMap = targetMap.get(target);
     if (!depsMap) {
@@ -182,9 +192,11 @@ function trigger(target, type, key, newValue, oldValue, oldTarget) {
     const run = function (effect) {
         // 如果存在scheduler调度函数, 则执行调度函数, 调度函数内部可能实行effect, 也可能不执行
         if (effect.options.scheduler) {
+            console.log('发现effect有调度器, 执行调度器');
             effect.options.scheduler(effect);
         }
         else {
+            console.log('effect没有调度器 执行effect');
             // 否则直接执行effect
             effect();
         }
@@ -355,11 +367,13 @@ class RefImpl {
     constructor(_rawValue, _shallow = false) {
         this._rawValue = _rawValue;
         this._shallow = _shallow;
+        console.log('创建ref', _rawValue);
         // 如果是浅的, 做一次代理就可以, 但是如果是深度的, 要进行深度代理了, 这里就可以用reactive了
         this._value = _shallow ? _rawValue : convert(_rawValue);
     }
     // ref类的属性访问器
     get value() {
+        console.log('ref, 触发get value 执行track');
         track(this, "get" /* GET */, 'value');
         return this._value;
     }
@@ -367,6 +381,7 @@ class RefImpl {
     set value(newVal) {
         // 如果发生了改变
         if (hasChanged(newVal, this._rawValue)) {
+            console.log('ref, 触发set value 执行trigger', newVal);
             // 进行赋值
             this._rawValue = newVal;
             this._value = newVal;
@@ -431,16 +446,22 @@ class ComputedRefImpl {
     ["__v_isReadonly" /* IS_READONLY */];
     constructor(getter, _setter, isReadonly) {
         this._setter = _setter;
+        console.log('创建computed, 生成computed的effect 但不执行');
         // 把getter进行effct化, effct执行,就会触发依赖收集
         this.effect = effect(getter, {
             // 不立即执行
             lazy: true,
             // 当属性依赖的值发生变化, 就会执行scheduler, 同时设置dirty状态
             scheduler: () => {
+                console.log('computed的effect的调度器scheduler执行');
                 if (!this._dirty) {
+                    console.log('调度器内 发现dirty为false, 把dirty设置为true, 执行trigger set value');
                     this._dirty = true;
-                    // 触发computed的value属性
+                    // 触发computed的value属性更新
                     trigger(this, "set" /* SET */, 'value');
+                }
+                else {
+                    console.log('调度器内 发现dirty为true, 什么都不做');
                 }
             }
         });
@@ -449,13 +470,20 @@ class ComputedRefImpl {
     }
     // 通过代理value, 来对computed进行依赖收集
     get value() {
+        console.log('触发computed get value');
         // 如果是dirty的, 就执行getter, 然后改变dirty状态, 就实现了computed的惰性特征
         if (this._dirty) {
+            console.log('computed的get value dirty为ture, 执行computed的effect, computed的effect执行会收集computed的getter');
             // 这里_effect就是返回的getter,执行getter, 把gtter返回的结果赋值给value
             this._value = this.effect();
+            console.log('computed的get value的dirty改为false');
             this._dirty = false;
+            console.log('computed的get value触发track');
             // 收集computed的value属性
             track(this, "get" /* GET */, 'value');
+        }
+        else {
+            console.log('computed的get value dirty为false, 什么都不做 直接返回value');
         }
         return this._value;
     }

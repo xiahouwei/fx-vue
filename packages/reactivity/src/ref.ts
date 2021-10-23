@@ -21,12 +21,14 @@ class RefImpl {
     public readonly __v_isRef = true
 
     constructor (private _rawValue, public readonly _shallow = false) {
+        console.log('创建ref', _rawValue)
         // 如果是浅的, 做一次代理就可以, 但是如果是深度的, 要进行深度代理了, 这里就可以用reactive了
         this._value = _shallow ? _rawValue : convert(_rawValue)
     }
 
     // ref类的属性访问器
     get value () {
+        console.log('ref, 触发get value 执行track')
         track(this, TrackOpTypes.GET, 'value')
         return this._value
     }
@@ -35,6 +37,7 @@ class RefImpl {
     set value (newVal) {
         // 如果发生了改变
         if (hasChanged(newVal, this._rawValue)) {
+            console.log('ref, 触发set value 执行trigger', newVal)
             // 进行赋值
             this._rawValue = newVal
             this._value = newVal

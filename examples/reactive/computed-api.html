@@ -15,15 +15,26 @@
         // let age = computed(() => {
         //     return state.age * 2
         // })
+        console.log('声明refCount')
         const refCount = ref(0)
-        const refDoubleCount = computed(() => refCount.value * 2)
+        console.log('声明refDoubleCount')
+        const refDoubleCount = computed(() => {
+            console.log('compted的getter被执行返回 refcount.value * 2')
+            return refCount.value * 2
+        })
+        console.log('声明页面的effect')
         effect(() => {
             // app.innerHTML = age.value
+            console.log('执行effect => 打印refDoubleCount.value')
+            console.log(refDoubleCount.value)
+            console.log('执行effect => app.innerHTML = refDoubleCount.value')
             app.innerHTML = refDoubleCount.value
         })
         setTimeout(() => {
+            console.log('执行页面setTimeout')
             // state.age = 2000
-            refCount.value++
+            console.log('设置refCount.value为2')
+            refCount.value = 2
         }, 2000)
     </script>
 </body>
