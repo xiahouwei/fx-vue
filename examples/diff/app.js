@@ -2,7 +2,8 @@ import { h, Text, Fragment, render } from "../../node_modules/@fx-vue/vue/dist/v
 
 const childrenList1 = Array.from({ length: 3 }, (_, i) => ({ id: i, name: i}))
 // const childrenList2 = childrenList1.splice(5, 1)
-const childrenList2 = childrenList1.splice(0, 2)
+const childrenList2 = childrenList1.slice(0, 2)
+childrenList2.push({ id: 4, name: 4})
 console.log(childrenList1)
 console.log(childrenList2)
 

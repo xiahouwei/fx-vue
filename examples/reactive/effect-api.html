@@ -11,14 +11,19 @@
     <script src="../../node_modules/@fx-vue/reactivity/dist/reactivity.global.js"></script>
     <script>
         let { reactive, effect } = VueReactivity
-        let state = reactive({name: 'dg', age: { n: 12 }, arr: [1, 2, 3]})
+        // let state = reactive({name: 'hellow', msg: 'world', age: { n: 12 }, arr: [1, 2, 3]})
+        let state = reactive({name: 'hellow', msg: 'world'})
         effect(() => {
+            console.log('============执行了effect===========')
             // app.innerHTML = state.name + '=========' + state.age.n
-            app.innerHTML = state.arr[2]
+            app.innerHTML = state.name + '=========' + state.msg
+            // app.innerHTML = state.arr[2]
         })
         setTimeout(() => {
             // state.name = 'fxfxfxf'
-            state.arr.length = 2
+            state.msg = 'world===world'
+            // state.age.n = 18
+            // state.arr.length = 2
         }, 2000)
     </script>
 </body>

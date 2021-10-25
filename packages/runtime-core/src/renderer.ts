@@ -435,7 +435,8 @@ function patchKeyedChildrenReuse(c1, c2, container, parentAnchor, parentComponen
 		} else {
 			// 如果找不到, 就创建
 			// 如果当前是第0个, 把新节点插入到 c1[0].el 即第一个旧节点之前
-			// 如果不是第0个, 通过c2[i - 1].el.nextSibling, 插入到新节点 前一个节点 的真实dom 的后一个节点之前
+			// 如果不是第0个, 通过c2[i - 1].el.nextSibling
+			// 插入到新节点 前一个节点(此时,此节点必然已渲染) 的真实dom 的后一个节点之前
 			const anchor = i === 0 ? c1[0].el : c2[i - 1].el.nextSibling
 			patch(null, next, container, anchor)
 		}

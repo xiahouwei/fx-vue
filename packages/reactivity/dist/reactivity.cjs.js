@@ -126,10 +126,10 @@ function track(target, type, key) {
         // 这样清除的时候, 就可以循环deps,然后再把dep里面对应的effect清除掉
         activeEffect.deps.push(dep);
     }
+    console.log('track收集后的依赖为:', targetMap);
 }
 // 触发更新 执行属性对应的effect
 function trigger(target, type, key, newValue, oldValue, oldTarget) {
-    debugger;
     console.log('执行trigger', target, key);
     // 如果触发的属性没有收集过effect, 则忽略
     const depsMap = targetMap.get(target);
