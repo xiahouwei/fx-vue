@@ -575,7 +575,6 @@ var VueShared = (function (exports) {
   }
   // 最长增长子序列的diff算法
   // function patchKeyedChildren (c1, c2, container, parentAnchor, parentComponent) {
-  // 	debugger
   // 	// j记录的是老元素 从首位开始 找相同key的新元素, 一旦找不到就停止
   // 	let j = 0
   // 	let prevVNode = c1[j]
@@ -694,15 +693,22 @@ var VueShared = (function (exports) {
   // 		}
   // 	}
   // }
+  // 最长增长子序列的diff算法
   function patchKeyedChildren(c1, c2, container, parentAnchor, parentComponent) {
+      debugger;
+      // 比较索引
       let i = 0;
+      // 新节点的长度
       const l2 = c2.length;
-      let e1 = c2.length - 1;
-      let e2 = c2.length - 1;
+      // 旧节点末尾指针
+      let e1 = c1.length - 1;
+      // 新节点末尾指针
+      let e2 = l2 - 1;
       // 1.从首至尾依次对比
       while (i <= e1 && i <= e2) {
           const n1 = c1[i];
           const n2 = c2[i];
+          // 如果发现相同key的节点则patch, 否则跳出循环
           if (isSameVNodeType(n1, n2)) {
               patch(n1, n2, container, parentAnchor, parentComponent);
           }
@@ -715,6 +721,7 @@ var VueShared = (function (exports) {
       while (i <= e1 && i <= e2) {
           const n1 = c1[e1];
           const n2 = c2[e2];
+          // 如果发现相同key的节点则patch, 否则跳出循环
           if (n1 && n2 && isSameVNodeType(n1, n2)) {
               patch(n1, n2, container, parentAnchor, parentComponent);
           }
@@ -724,10 +731,13 @@ var VueShared = (function (exports) {
           e1--;
           e2--;
       }
-      // 3.要把从比较结束索引到末尾, 老元素不存在的新元素挂载(公共子序列挂载)
+      // 3.[1, 2, 3] => [1, 4, 2, 3]这种情况,要处理4 (i:1, e1:0, e2:1)
+      // 当前后对比结束, 比较索引比旧节点末尾指针大(证明旧节点遍历完了), 且比新节点末尾指针小, 说明有没挂载的新节点
       if (i > e1) {
           if (i <= e2) {
+              // nextPos是已经处理的新节点 的 最后一个的末尾指针
               const nextPos = e2 + 1;
+              // 设置锚点, 这个已处理新节点末尾指针小于新节点个数, 则插到已处理末尾新节点之前, 否则就插入到最后
               const anchor = nextPos < l2 ? c2[nextPos].el : parentAnchor;
               while (i <= e2) {
                   patch(null, c2[i], container, anchor, parentComponent);
@@ -735,7 +745,8 @@ var VueShared = (function (exports) {
               }
           }
       }
-      // 4.再把从比较结束索引开始, 新元素没有的老元素卸载(公共子序列卸载)
+      // 4.[1, 2, 3, 4] => [1, 3, 4]这种情况,要处理2
+      // 当前后对比结束, 比较索引比新节点末尾指针大(证明新节点遍历完了), 且比旧节点末尾指针小, 说明有没写在的旧节点
       else if (i > e2) {
           while (i <= e1) {
               unmount(c1[i], parentComponent, null, true);
@@ -743,44 +754,55 @@ var VueShared = (function (exports) {
           }
       }
       // 5.未知序列的处理
+      // a b [c d e] f g
+      // a b [d e c h] f g
+      // i = 2, e1 = 4, e2 = 5
       else {
-          const s1 = i; // prev starting index
-          const s2 = i; // next starting index
-          // 5.1 build key:index map for newChildren
+          // 旧起始索引
+          const s1 = i;
+          // 新起始索引
+          const s2 = i;
+          // 5.1 创建未处理节点索引map
           const keyToNewIndexMap = new Map();
-          for (i = s2; i < e2; i++) {
-              const nextChild = c2[i];
-              if (!nextChild) {
-                  break;
-              }
-              if (nextChild.key !== null) {
+          // 循环 待处理新节点, 设置map, key为节点key, value为节点本身索引
+          // {d: 2, e: 3, c: 4, h: 5}
+          for (i = s2; i <= e2; i++) {
+              const nextChild = c2[i] || {};
+              if (nextChild.key != null) {
                   keyToNewIndexMap.set(nextChild.key, i);
               }
           }
-          // 5.2 loop through old children left to be patched and try to patch
+          console.log('keyToNewIndexMap', keyToNewIndexMap);
+          // 5.2 从后向前循环遍历需要patch的旧节点, 且patch
           let j;
+          // 待处理老节点指针, 用来标记当前已经遍历了几个待处理老节点
           let patched = 0;
+          // 新节点中待处理的节点数[d e c h] 4个
           const toBePatched = e2 - s2 + 1;
+          // 节点是否需要移动的标记
           let moved = false;
+          // 最大索引指针
           let maxNewIndexSoFar = 0;
+          // 待处理新节点对应旧节点索引数组, 简称 新对旧索引数组
           const newIndexToOldIndexMap = new Array(toBePatched);
+          // 新对旧索引数组初始化每个元素为0 [0, 0, 0, 0]
           for (i = 0; i < toBePatched; i++)
               newIndexToOldIndexMap[i] = 0;
+          // 循环 待处理旧节点
           for (i = s1; i <= e1; i++) {
-              const prevChild = c1[i];
-              if (!prevChild) {
-                  break;
-              }
+              const prevChild = c1[i] || {};
+              // 如果当前已遍历的待处理老节点大于待处理新节点, 说明剩下的待处理老节点都需要卸载
               if (patched >= toBePatched) {
                   unmount(prevChild, parentComponent, null, true);
                   continue;
               }
+              // 如果当前遍历的待处理旧节点有key,从待处理新节点map取出对应key的待处理新节点的index (d:2)
               let newIndex;
               if (prevChild.key != null) {
                   newIndex = keyToNewIndexMap.get(prevChild.key);
               }
               else {
-                  // key-less node, try to locate a key-less node of the same type
+                  // 如果不存在key, 循环待处理新结点, 试着找出相同类型的节点, newIndex赋值他的索引
                   for (j = s2; j <= e2; j++) {
                       if (newIndexToOldIndexMap[j - s2] === 0 && isSameVNodeType(prevChild, c2[j])) {
                           newIndex = j;
@@ -789,36 +811,46 @@ var VueShared = (function (exports) {
                   }
               }
               if (newIndex === undefined) {
+                  // newIndex不存在证明没有可复用的旧节点, 需要卸载这个待处理旧节点
                   unmount(prevChild, parentComponent, null, true);
               }
               else {
+                  // 如果找到了 则说明可以复用, 新对旧索引数组 把新节点都赋值上对应的旧节点索引(对应不上的还是0)
+                  // [4, 5, 3, 0]
                   newIndexToOldIndexMap[newIndex - s2] = i + 1;
                   if (newIndex >= maxNewIndexSoFar) {
+                      // 如果索引大于最大索引指针, 更新索引指针
                       maxNewIndexSoFar = newIndex;
                   }
                   else {
+                      // 如果索引小于最大索引指针, 说明需要移动
                       moved = true;
                   }
+                  // patch新旧节点
                   patch(prevChild, c2[newIndex], container, null, parentComponent);
+                  // 待处理指针向后进一位
                   patched++;
               }
           }
-          // 5.3 move and mount
+          // 5.3 移动于与挂载
+          // 根据新对旧索引数组 计算出 最长增长子序列 [d, e] [0, 1]
           const increasingNewIndexSequence = moved ? getSequence(newIndexToOldIndexMap) : EMPTY_ARR;
+          // 获取 最长增长子序列 的 尾索引
           j = increasingNewIndexSequence.length - 1;
-          // looping backwards so that we can use last patched node as anchor
+          // 待处理新节点从后向前循环
           for (i = toBePatched - 1; i >= 0; i--) {
+              // 获取新节点索引, 以及新节点
               const nextIndex = s2 + i;
               const nextChild = c2[nextIndex];
+              // 设置锚点, 待处理新节点后面的节点索引 小于 新节点长度, 则插到待处理新节点后面的节点之前, 否则就插入到最后
               const anchor = nextIndex + 1 < l2 ? c2[nextIndex + 1].el : parentAnchor;
+              // 如果新对旧索引值为0, 说明他没有课复用的节点, 需要挂载
               if (newIndexToOldIndexMap[i] === 0) {
-                  // mount new
                   patch(null, nextChild, container, anchor, parentComponent);
               }
               else if (moved) {
-                  // move if:
-                  // There is no stable subsequence (e.g. a reverse)
-                  // OR current node is not among the stable sequence
+                  // 如果有移动标记, 证明需要移动
+                  // 待处理新节点的索引, 和 最长增长子序列 里面存储 旧节点索引不一致, 就移动节点
                   if (j < 0 || i !== increasingNewIndexSequence[j]) {
                       move(nextChild, container, anchor);
                   }

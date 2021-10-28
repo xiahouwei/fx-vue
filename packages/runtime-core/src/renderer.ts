@@ -449,7 +449,7 @@ function patchKeyedChildrenReuse(c1, c2, container, parentAnchor, parentComponen
 
 // 双端比较型diff
 function patchKeyedChildrenDoubleEnd(c1, c2, container, parentAnchor, parentComponent) {
-	// 声明四个指针, 分别指向旧元素第一个, 旧元素最后一个, 新元素第一个, 新元素最后一个
+	// 声明四个指针, 分别指向旧首, 旧尾, 新首, 新尾
 	let oldStartIdx = 0
 	let oldEndIdx = c1.length - 1
 	let newStartIdx = 0
@@ -459,81 +459,79 @@ function patchKeyedChildrenDoubleEnd(c1, c2, container, parentAnchor, parentComp
 	let oldEndVNode = c1[oldEndIdx]
 	let newStartVNode = c2[newStartIdx]
 	let newEndVNode = c2[newEndIdx]
-	// 旧元素第一个 小于等于 旧元素最后一个 且 新节点第一个 小于等于 新结点最后一个, 就说明有需要循环比较的节点存在
+	// 旧首 小于等于 旧尾 且 新首 小于等于 新尾, 就说明有需要循环比较的节点存在
 	while (oldStartIdx <= oldEndIdx && newStartIdx <= newEndIdx) {
 		if (!oldStartVNode) {
-			// 如果节点不存在 证明这个节点刚才移动过, 只需要更新指针
+			// 如果旧首节点不存在 证明这个节点刚才移动过, 只需要更新指针 旧首向后进一位
 			oldStartVNode = c1[++oldStartIdx]
 		} else if (!oldEndVNode) {
-			// 如果节点不存在 证明这个节点刚才移动过, 只需要更新指针
+			// 如果旧尾节点不存在 证明这个节点刚才移动过, 只需要更新指针 旧尾向前进一位
 			oldEndVNode = c1[--oldEndIdx]
 		} else if (oldStartVNode.key === newStartVNode.key) {
-			// 首首对比
-			// 先进行patch更新
+			// 首首对比 key相同 patch更新
 			patch(oldStartVNode, newStartVNode, container, parentAnchor, parentComponent)
 			// 更新指针
-			// 旧节点第一位 向后移动一位
+			// 旧首向后进一位
 			oldStartVNode = c1[++oldStartIdx]
-			// 新结点第一位 向后移动一位
+			// 新首向后进一位
 			newStartVNode = c2[++newStartIdx]
 		} else if (oldEndVNode.key === newEndVNode.key) {
-			// 尾尾对比
-			// 先进行patch更新
+			// 尾尾对比 key相同 patch更新
 			patch(oldEndVNode, newEndVNode, container, parentAnchor, parentComponent)
-			// 不需要移动, 只需更新指针
-			// 旧节点最后一个和新节点最后一个 分别向前移动一位
+			// 更新指针
+			// 旧尾向前进一位
 			oldEndVNode = c1[--oldEndIdx]
+			// 新尾向前进一位
 			newEndVNode = c1[--newEndIdx]
 		} else if (oldStartVNode.key === newEndVNode.key) {
-			// 首尾对比
-			// 先进行patch更新
+			// 旧首, 新尾对比 key相同 patch更新
 			patch(oldStartVNode, newEndVNode, container, parentAnchor, parentComponent)
-			// 把旧元素的第一个 移动到 最后一位
+			// 把旧首 移动到 旧尾位置
 			container.insertBefore(oldStartVNode.el, oldEndVNode.el.nextSibling)
 			// 更新指针
-			// 旧节点第一位 向后移动一位
+			// 旧首向后进一位
 			oldStartVNode = c1[++oldStartIdx]
-			// 新节点最后一位  向前移动一位
+			// 新尾向前进一位
 			newEndVNode = c2[--newEndIdx]
 		} else if (oldEndVNode.key === newStartVNode.key) {
-			// 尾首对比
-			// 先进行patch更新
+			// 旧尾 新首对比 key相同 patch更新
 			patch(oldEndVNode, newStartVNode, container, parentAnchor, parentComponent)
-			// 把旧节点的最后一个 移动到第一个
+			// 把旧尾 移动到 新首位置
 			container.insertBefore(oldEndVNode.el, oldStartVNode.el)
 			// 更新指针
-			// 旧节点最后一个 向前移动一位
+			// 旧尾向前进一位
 			oldEndVNode = c1[--oldEndIdx]
-			// 新结点第一个 向后移动一位
+			// 新首向后进一位
 			newStartVNode = c2[++newStartIdx]
 		} else {
-			// 找到旧节点中 与新节点第一个 相同key的节点
+			// 找到旧节点中 与 新首 相同key的节点
 			const indexInOld = c1.findIndex(node => node.key === newStartVNode)
 			if (~indexInOld) {
 				// 如果找到了进行patch更新
 				const moveVNode = c1[indexInOld]
 				patch(moveVNode, newStartVNode, container, parentAnchor, parentComponent)
-				// 把此节点移动到 首位
+				// 把此节点移动到 旧首之前位置
 				container.insertBefore(moveVNode.el, oldStartVNode.el)
 				// 把此节点原来的位置置空, 置空的目的在下次循环到这里的时候 进行忽略处理
 				c1[indexInOld] = undefined
 			} else {
-				// 如果没找到, 则这个节点需要挂载, 挂载后的位置就是旧节点第一个之前, 也就是首位
+				// 如果没找到, 则这个节点需要挂载, 挂载后的位置就是旧首之前, 也就是首位
 				patch(null, newStartVNode, container, oldStartVNode.el)
 			}
 			// 更新指针
-			// 新结点第一个向后移动一位
+			// 新首向后进一位
 			newStartVNode = c2[++newStartIdx]
 		}
-		// 循环结束后, 发现旧节点 末尾指针 小于 起始指针, 此时后可能, 新节点找不到相同key的节点, 而且还没有挂载
+		// 循环结束后, 发现旧尾指针 小于 旧首指针, 这时看看新节点是不是有没有匹配key的节点(新节点数量>旧节点数量), 要挂载
 		if (oldEndIdx < oldStartIdx) {
-			// 如果新节点首尾有一个或多个, 需要把这些没有对应key的节点 挂载起来
+			// 如果新首到新尾有一个或多个, 需要把这些没有对应key的节点 挂载起来
 			for (let i = newStartIdx; i <= newEndIdx; i++) {
 				patch(null, c2[i], container, oldStartVNode.el)
 			}
-		} else if (newEndIdx < newStartIdx) {
-			// 如果循环后, 新结点指针的末尾 小于 起始, 此时后可能 旧节点有找不到key, 而且没有卸载的
-			// 如果旧节点首尾有一个或多个, 需要把这些没有对应key的节点 卸载
+		}
+		// 如果循环后, 新尾 小于 新首, 这时看看旧节点是不是有没有匹配key的节点(旧节点数量>新节点数量), 要卸载
+		else if (newEndIdx < newStartIdx) {
+			// 如果旧首到旧尾有一个或多个, 需要把这些没有对应key的节点 卸载
 			for (let i = oldStartIdx; i <= oldEndIdx; i++) {
 				unmount(c1[i], parentComponent, null, true)
 			}
@@ -543,7 +541,6 @@ function patchKeyedChildrenDoubleEnd(c1, c2, container, parentAnchor, parentComp
 
 // 最长增长子序列的diff算法
 // function patchKeyedChildren (c1, c2, container, parentAnchor, parentComponent) {
-// 	debugger
 // 	// j记录的是老元素 从首位开始 找相同key的新元素, 一旦找不到就停止
 // 	let j = 0
 // 	let prevVNode = c1[j]
@@ -664,15 +661,21 @@ function patchKeyedChildrenDoubleEnd(c1, c2, container, parentAnchor, parentComp
 // 	}
 // }
 
+// 最长增长子序列的diff算法
 function patchKeyedChildren(c1, c2, container, parentAnchor, parentComponent) {
+	// 比较索引
 	let i = 0
+	// 新节点的长度
 	const l2 = c2.length
-	let e1 = c2.length - 1
-	let e2 = c2.length - 1
+	// 旧节点末尾指针
+	let e1 = c1.length - 1
+	// 新节点末尾指针
+	let e2 = l2 - 1
 	// 1.从首至尾依次对比
 	while (i <= e1 && i <= e2) {
 		const n1 = c1[i]
 		const n2 = c2[i]
+		// 如果发现相同key的节点则patch, 否则跳出循环
 		if (isSameVNodeType(n1, n2)) {
 			patch(n1, n2, container, parentAnchor, parentComponent)
 		} else {
@@ -684,6 +687,7 @@ function patchKeyedChildren(c1, c2, container, parentAnchor, parentComponent) {
 	while (i <= e1 && i <= e2) {
 		const n1 = c1[e1]
 		const n2 = c2[e2]
+		// 如果发现相同key的节点则patch, 否则跳出循环
 		if (n1 && n2 && isSameVNodeType(n1, n2)) {
 			patch(n1, n2, container, parentAnchor, parentComponent)
 		} else {
@@ -692,10 +696,13 @@ function patchKeyedChildren(c1, c2, container, parentAnchor, parentComponent) {
 		e1--
 		e2--
 	}
-	// 3.要把从比较结束索引到末尾, 老元素不存在的新元素挂载(公共子序列挂载)
+	// 3.[1, 2, 3] => [1, 4, 2, 3]这种情况,要处理4 (i:1, e1:0, e2:1)
+	// 当前后对比结束, 比较索引比旧节点末尾指针大(证明旧节点遍历完了), 且比新节点末尾指针小, 说明有没挂载的新节点
 	if (i > e1) {
 		if (i <= e2) {
+			// nextPos是已经处理的新节点 的 最后一个的末尾指针
 			const nextPos = e2 + 1
+			// 设置锚点, 这个已处理新节点末尾指针小于新节点个数, 则插到已处理末尾新节点之前, 否则就插入到最后
 			const anchor = nextPos < l2 ? c2[nextPos].el : parentAnchor
 			while (i <= e2) {
 				patch(null, c2[i], container, anchor, parentComponent)
@@ -703,7 +710,8 @@ function patchKeyedChildren(c1, c2, container, parentAnchor, parentComponent) {
 			}
 		}
 	}
-	// 4.再把从比较结束索引开始, 新元素没有的老元素卸载(公共子序列卸载)
+	// 4.[1, 2, 3, 4] => [1, 3, 4]这种情况,要处理2
+	// 当前后对比结束, 比较索引比新节点末尾指针大(证明新节点遍历完了), 且比旧节点末尾指针小, 说明有没写在的旧节点
 	else if (i > e2) {
 		while (i <= e1) {
 			unmount(c1[i], parentComponent, null, true)
@@ -711,45 +719,53 @@ function patchKeyedChildren(c1, c2, container, parentAnchor, parentComponent) {
 		}
 	}
 	// 5.未知序列的处理
+	// a b [c d e] f g
+	// a b [d e c h] f g
+	// i = 2, e1 = 4, e2 = 5
 	else {
-		const s1 = i // prev starting index
-		const s2 = i // next starting index
-		// 5.1 build key:index map for newChildren
+		// 旧起始索引
+		const s1 = i
+		// 新起始索引
+		const s2 = i
+		// 5.1 创建未处理节点索引map
 		const keyToNewIndexMap = new Map()
-		for (i = s2; i < e2; i++) {
-			const nextChild = c2[i]
-			if (!nextChild) {
-				break
-			}
-			if (nextChild.key !== null) {
+		// 循环 待处理新节点, 设置map, key为节点key, value为节点本身索引
+		// {d: 2, e: 3, c: 4, h: 5}
+		for (i = s2; i <= e2; i++) {
+			const nextChild = c2[i] || {}
+			if (nextChild.key != null) {
 				keyToNewIndexMap.set(nextChild.key, i)
 			}
 		}
-
-		// 5.2 loop through old children left to be patched and try to patch
+		console.log('keyToNewIndexMap', keyToNewIndexMap)
+		// 5.2 从后向前循环遍历需要patch的旧节点, 且patch
 		let j
+		// 待处理老节点指针, 用来标记当前已经遍历了几个待处理老节点
 		let patched = 0
+		// 新节点中待处理的节点数[d e c h] 4个
 		const toBePatched = e2 - s2 + 1
+		// 节点是否需要移动的标记
 		let moved = false
+		// 最大索引指针
 		let maxNewIndexSoFar = 0
+		// 待处理新节点对应旧节点索引数组, 简称 新对旧索引数组
 		const newIndexToOldIndexMap = new Array(toBePatched)
-
+		// 新对旧索引数组初始化每个元素为0 [0, 0, 0, 0]
 		for (i = 0; i < toBePatched; i++) newIndexToOldIndexMap[i] = 0
-
+		// 循环 待处理旧节点
 		for (i = s1; i <= e1; i++) {
-			const prevChild = c1[i]
-			if (!prevChild) {
-				break
-			}
+			const prevChild = c1[i] || {}
+			// 如果当前已遍历的待处理老节点大于待处理新节点, 说明剩下的待处理老节点都需要卸载
 			if (patched >= toBePatched) {
 				unmount(prevChild, parentComponent, null, true)
 				continue
 			}
+			// 如果当前遍历的待处理旧节点有key,从待处理新节点map取出对应key的待处理新节点的index (d:2)
 			let newIndex
 			if (prevChild.key != null) {
 				newIndex = keyToNewIndexMap.get(prevChild.key)
 			} else {
-				// key-less node, try to locate a key-less node of the same type
+				// 如果不存在key, 循环待处理新结点, 试着找出相同类型的节点, newIndex赋值他的索引
 				for (j = s2; j <= e2; j++) {
 					if (
 						newIndexToOldIndexMap[j - s2] === 0 && isSameVNodeType(prevChild, c2[j])
@@ -759,35 +775,47 @@ function patchKeyedChildren(c1, c2, container, parentAnchor, parentComponent) {
 					}
 				}
 			}
+			
 			if (newIndex === undefined) {
+				// newIndex不存在证明没有可复用的旧节点, 需要卸载这个待处理旧节点
 				unmount(prevChild, parentComponent, null, true)
 			} else {
+				// 如果找到了 则说明可以复用, 新对旧索引数组 把新节点都赋值上对应的旧节点索引(对应不上的还是0)
+				// [4, 5, 3, 0]
 				newIndexToOldIndexMap[newIndex - s2] = i + 1
 				if (newIndex >= maxNewIndexSoFar) {
+					// 如果索引大于最大索引指针, 更新索引指针
 					maxNewIndexSoFar = newIndex
 				} else {
+					// 如果索引小于最大索引指针, 说明需要移动
 					moved = true
 				}
+				// patch新旧节点
 				patch(prevChild, c2[newIndex], container, null, parentComponent)
+				// 待处理指针向后进一位
 				patched++
 			}
 		}
 
-		// 5.3 move and mount
+		// 5.3 移动于与挂载
+		// 根据新对旧索引数组 计算出 最长增长子序列 [d, e] [0, 1]
 		const increasingNewIndexSequence = moved ? getSequence(newIndexToOldIndexMap) : EMPTY_ARR
+		// 获取 最长增长子序列 的 尾索引
 		j = increasingNewIndexSequence.length - 1
-		// looping backwards so that we can use last patched node as anchor
+		// 待处理新节点从后向前循环
 		for (i = toBePatched - 1; i >= 0; i--) {
+			// 获取新节点索引, 以及新节点
 			const nextIndex = s2 + i
 			const nextChild = c2[nextIndex]
+			// 设置锚点, 待处理新节点后面还有节点,就插在这个节点的前面,否则就插入到最后
 			const anchor = nextIndex + 1 < l2 ? c2[nextIndex + 1].el : parentAnchor
+			// 如果新对旧索引值为0, 说明他没有课复用的节点, 需要挂载
 			if (newIndexToOldIndexMap[i] === 0) {
-				// mount new
 				patch(null, nextChild, container, anchor, parentComponent)
 			} else if (moved) {
-				// move if:
-				// There is no stable subsequence (e.g. a reverse)
-				// OR current node is not among the stable sequence
+				// 如果有移动标记, 证明需要移动
+				// 待处理新节点的索引, 和 最长增长子序列 里面存储 旧节点索引不一致, 就移动节点
+				// j < 0 指 最长增长子序列为空数组 []
 				if (j < 0 || i !== increasingNewIndexSequence[j]) {
 					move(nextChild, container, anchor, MoveType.REORDER)
 				} else {
