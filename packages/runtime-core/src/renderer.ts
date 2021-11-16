@@ -1,6 +1,10 @@
+import { effect } from "@fx-vue/reactivity"
 import { rendererOptions } from "@fx-vue/runtime-dom"
 import { EMPTY_ARR, EMPTY_OBJ, isReservedProp, NOOP, ShapeFlags } from "@fx-vue/shared"
 import { createAppAPI } from "./apiCreateApp"
+import { createComponentInstance, setupComponent } from "./component"
+import { shouldUpdateComponent } from "./componentRenderUtils"
+import { queueJob } from "./scheduler"
 import { Fragment, isSameVNodeType, normalizeVNode, Text } from "./vnode"
 
 export const enum MoveType {
@@ -168,6 +172,106 @@ function processComponent(n1, n2, container, anchor, parentComponent) {
 	}
 }
 
+// @TODO 更新组件节点
+function updateComponent(n1, n2, container) {
+	console.log('updateComponent 更新组件')
+	const instance = (n2.component = n1.component);
+	if (shouldUpdateComponent(n1, n2)) {
+		console.log(`组件需要更新: ${instance}`);
+		// 那么 next 就是新的 vnode 了（也就是 n2）
+		instance.next = n2;
+		// 这里的 update 是在 setupRenderEffect 里面初始化的，update 函数除了当内部的响应式对象发生改变的时候会调用
+		// 还可以直接主动的调用(这是属于 effect 的特性)
+		// 调用 update 再次更新调用 patch 逻辑
+		// 在update 中调用的 next 就变成了 n2了
+		// ps：可以详细的看看 update 中 next 的应用
+		// TODO 需要在 update 中处理支持 next 的逻辑
+		instance.update();
+	} else {
+		console.log(`组件不需要更新: ${instance}`);
+		// 不需要更新的话，那么只需要覆盖下面的属性即可
+		n2.component = n1.component;
+		n2.el = n1.el;
+		instance.vnode = n2;
+	}
+}
+
+// 挂载组件节点
+function mountComponent(initialVNode, container, anchor, parentComponent) {
+	// 如果是组件 type 内必然有render函数
+	// const instance = vnode
+	// instance.$vnode = instance.type.render()
+	// patch(container._vnode, instance.$vnode, container, anchor, parentComponent)
+
+	// 1. 先创建一个 component instance
+    const instance = (initialVNode.component = createComponentInstance(
+		initialVNode,
+		parentComponent
+	))
+
+	// 2. 给 instance 加工加工
+    setupComponent(instance)
+	
+	// 3.渲染component的render, 且通过effect触发update
+    setupRenderEffect(instance, initialVNode, anchor, container)
+}
+
+// 渲染组件节点, 设置effect
+function setupRenderEffect (instance, initialVNode, anchor, container) {
+	function componentUpdateFn () {
+		debugger
+		// 如果没有挂载过
+		if (!instance.isMounted) {
+			const proxyToUse = instance.proxy
+			// 通过render生成subTree
+			const subTree = (instance.subTree = instance.render.call(
+				proxyToUse,
+				proxyToUse
+			))
+			patch(null, subTree, container, anchor, instance)
+			initialVNode.el = subTree.el
+			instance.isMounted = true
+		} else {
+			const { next, vnode } = instance
+			if (next) {
+				next.el = vnode.el
+				updateComponentPreRender(instance, next)
+			}
+			const proxyToUse = instance.proxy
+			const nextTree = instance.render.call(proxyToUse, proxyToUse)
+			// 替换之前的 subTree
+			const prevTree = instance.subTree;
+			instance.subTree = nextTree;
+	
+			// 触发 beforeUpdated hook
+			console.log("beforeUpdated hook");
+			console.log("onVnodeBeforeUpdate hook");
+	
+			// 用旧的 vnode 和新的 vnode 交给 patch 来处理
+			patch(prevTree, nextTree, prevTree.el, anchor, instance)
+	
+			// 触发 updated hook
+			console.log("updated hook");
+			console.log("onVnodeUpdated hook");
+		}
+	}
+	instance.update = effect(componentUpdateFn, {
+		scheduler: () => {
+			// 把 effect 推到微任务的时候在执行
+			// queueJob(effect);
+			queueJob(instance.update);
+		}
+	})
+}
+
+function updateComponentPreRender(instance, nextVNode) {
+	const { props } = nextVNode;
+	console.log("更新组件的 props", props)
+	instance.props = props
+	// console.log("更新组件的 slots");
+	// TODO 更新组件的 slots
+}
+
 // 挂载元素节点
 function mountElement(vnode, container, anchor, parentComponent) {
 	console.log('mountElement 挂载元素节点')
@@ -199,15 +303,6 @@ function mountElement(vnode, container, anchor, parentComponent) {
 	// 挂载 这里传入的anchor参数 是为了保证fragment挂载位置正确
 	renderApi.hostInsert(el, container, anchor)
 }
-
-// 挂载组件节点
-function mountComponent(vnode, container, anchor, parentComponent) {
-	// 如果是组件 type 内必然有render函数
-	const instance = vnode
-	instance.$vnode = instance.type.render()
-	patch(container._vnode, instance.$vnode, container, anchor, parentComponent)
-}
-
 // 挂载子节点
 function mountChildren(children, container, anchor, parentComponent, start = 0) {
 	for (let i = start; i < children.length; i++) {
@@ -311,11 +406,6 @@ function patchChildren(n1, n2, container, anchor, parentComponent) {
 			}
 		}
 	}
-}
-
-// @TODO 更新组件节点
-function updateComponent(n1, n2, container) {
-	console.log('updateComponent 更新组件')
 }
 
 // 取消挂载

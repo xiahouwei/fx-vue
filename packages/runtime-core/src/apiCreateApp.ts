@@ -55,6 +55,9 @@ export function createAppContext () {
 		mixins: [],
 		components: {},
 		directives: {},
-		provides: Object.create(null)
+		provides: Object.create(null),
+		optionsCache: new WeakMap(),
+		propsCache: new WeakMap(),
+		emitsCache: new WeakMap()
 	}
 }

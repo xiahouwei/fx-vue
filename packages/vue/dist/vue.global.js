@@ -28,16 +28,27 @@ var VueShared = (function (exports) {
   const isOn = (key) => onRE.test(key);
   // 合并
   const extend = Object.assign;
+  // 判断非继承属性
+  const hasOwnProperty = Object.prototype.hasOwnProperty;
+  const hasOwn = (val = {}, key) => hasOwnProperty.call(val, key);
   // 判断是数组
   const isArray = Array.isArray;
+  // 判断是map
+  const isMap = (val) => toTypeString(val) === '[object Map]';
   // 判断是function
   const isFunction = (val) => typeof val === 'function';
   // 判断是string
   const isString = (val) => typeof val === 'string';
+  // 判断是symbol
+  const isSymbol = (val) => typeof val === 'symbol';
   // 判断是Boolean
   const isBoolean = (val) => typeof val === 'boolean';
   // 判断是对象
   const isObject = (val) => val !== null && typeof val === 'object';
+  const objectToString = Object.prototype.toString;
+  const toTypeString = (value) => objectToString.call(value);
+  // 判断是否为字符串类型的正整数, 常用于key
+  const isIntegerKey = (key) => isString(key) && key !== 'NaN' && key[0] !== '-' && '' + parseInt(key, 10) === key;
   // 是否为vue关键字
   const isReservedProp = /*#__PURE__*/ makeMap(
   // 前导逗号是有意为之的，因此空字符串""也包含在内  
@@ -45,6 +56,25 @@ var VueShared = (function (exports) {
       'onVnodeBeforeMount,onVnodeMounted,' +
       'onVnodeBeforeUpdate,onVnodeUpdated,' +
       'onVnodeBeforeUnmount,onVnodeUnmounted');
+  // 缓存String - function
+  const cacheStringFunction = (fn) => {
+      const cache = Object.create(null);
+      return ((str) => {
+          const hit = cache[str];
+          return hit || (cache[str] = fn(str));
+      });
+  };
+  // 烤肉串 => 驼峰
+  const camelizeRE = /-(\w)/g;
+  const camelize = cacheStringFunction((str) => {
+      return str.replace(camelizeRE, (_, c) => (c ? c.toUpperCase() : ''));
+  });
+  // 转大写
+  const capitalize = cacheStringFunction((str) => str.charAt(0).toUpperCase() + str.slice(1));
+  // 转on命名
+  const toHandlerKey = cacheStringFunction((str) => (str ? `on${capitalize(str)}` : ``));
+  // 判断是否发生变化
+  const hasChanged = (value, oldValue) => value !== oldValue && (value === value || oldValue === oldValue);
 
   // 碎片节点
   const Fragment = Symbol('Fragment');
@@ -157,7 +187,522 @@ var VueShared = (function (exports) {
       return value ? value.__v_isVNode === true : false;
   }
 
-  let uid = 0;
+  // 迭代行为专用key
+  const ITERATE_KEY = Symbol('');
+  // effect栈
+  const effectStack = [];
+  // 当前要收集的effect
+  let activeEffect;
+  // 副作用函数
+  function effect(fn, options = {}) {
+      console.log('创建effect');
+      // 创建effect, 依赖收集
+      const effect = creatReactiveEffect(fn, options);
+      if (!options.lazy) {
+          console.log('effect不是lazy的, 执行effect');
+          effect();
+      }
+      return effect;
+  }
+  // effct依赖收集
+  let uid$2 = 0;
+  function creatReactiveEffect(fn, options) {
+      const effect = function () {
+          console.log('执行effect, 通过堆栈来缓存当前activeEffect');
+          // 避免重复收集
+          if (!effectStack.includes(effect)) {
+              cleanup(effect);
+              // 通过入栈, 出栈保证收集effect是正确的, 避免嵌套effect情况下收集错误
+              // 因为如果是effect内嵌套effect 如 effect(() => { effect(() => {}) })
+              // 缓存activeEffect后 执行fn 就会执行下层的effect, 这时有可能还没有触发上层的track, 就已经更新了activeEffect
+              // 这样当上层再track收集依赖的时候,activeEffect就不正确了
+              try {
+                  console.log('effect堆栈 push effect, 设置为activeEffect');
+                  effectStack.push(effect);
+                  activeEffect = effect;
+                  console.log('执行effect内的fn');
+                  return fn(); // 执行函数, 通过取值, 触发get
+              }
+              finally {
+                  console.log('effect堆栈 pop effect, activeEffect设置为堆栈最后一个');
+                  effectStack.pop();
+                  activeEffect = effectStack[effectStack.length - 1];
+              }
+          }
+      };
+      // 唯一标识
+      effect.id = uid$2++;
+      // 是否允许递归调用 默认false
+      effect.allowRecurse = !!options.allowRecurse;
+      // 响应式effect标识
+      effect._isEffect = true;
+      // effect是否激活 调用stop后, 设置为false
+      effect.active = true;
+      // 保存原始函数
+      effect.raw = fn;
+      // 持有当前effect的dep数组
+      effect.deps = [];
+      // 保存用户属性
+      effect.options = options;
+      return effect;
+  }
+  // 清除
+  function cleanup(effect) {
+      const { deps } = effect;
+      if (deps.length) {
+          for (let i = 0; i < deps.length; i++) {
+              deps[i].delete(effect);
+          }
+          deps.length = 0;
+      }
+  }
+  // 依赖收集, 让某个对象的属性, 收集它对应的effect
+  const targetMap = new WeakMap();
+  function track(target, type, key) {
+      console.log('执行track, 收集effect', target, key);
+      if (activeEffect === undefined) {
+          console.log('当前没有任何activeEffect, 停止track');
+          return;
+      }
+      // 通过target获取它对应的dep
+      let depsMap = targetMap.get(target);
+      if (!depsMap) {
+          targetMap.set(target, (depsMap = new Map()));
+      }
+      // 通过key收集它对应的dep, dep内就是effect
+      let dep = depsMap.get(key);
+      if (!dep) {
+          depsMap.set(key, (dep = new Set()));
+      }
+      // 这里就是真正收集依赖了, 且避免重复收集
+      if (!dep.has(activeEffect)) {
+          dep.add(activeEffect);
+          // 这里的收集用作clean之用,  deps是array,里面每个元素是dep dep是set, 里面每个元素是effect
+          // 这样清除的时候, 就可以循环deps,然后再把dep里面对应的effect清除掉
+          activeEffect.deps.push(dep);
+      }
+      console.log('track收集后的依赖为:', targetMap);
+  }
+  // 触发更新 执行属性对应的effect
+  function trigger(target, type, key, newValue, oldValue, oldTarget) {
+      console.log('执行trigger', target, key);
+      // 如果触发的属性没有收集过effect, 则忽略
+      const depsMap = targetMap.get(target);
+      if (!depsMap) {
+          return;
+      }
+      // 通过set去重, 就不会重复执行了 这里是针对effect回调内的多次取值
+      const effects = new Set();
+      // 声明add用于收集要触发的effect, 通过add收集起来, 然后统一执行
+      const add = (effectsAdd) => {
+          if (effectsAdd) {
+              // 避免死循环
+              effectsAdd.forEach(effect => {
+                  if (effect !== activeEffect || effect.allowRecurse) {
+                      effects.add(effect);
+                  }
+              });
+          }
+      };
+      // 将所有需要执行的effect收集到一起, 然后一起执行
+      // 1.如果修改的属性是length, 且target为数组, 则是对数组length进行改变
+      if (key === 'length' && isArray(target)) {
+          depsMap.forEach((dep, key) => {
+              // 如果直接改的数组长度, 或者之前收集的key比改动之后的大或者相等(说明会造成变动, 否则是不会发生变化的)
+              // 注意这里使用length的值和下标对比
+              if (key === 'length' || key >= newValue) {
+                  add(dep);
+              }
+          });
+      }
+      else {
+          // 2.如果存在key 就是修改
+          if (key !== undefined) {
+              add(depsMap.get(key));
+          }
+          switch (type) {
+              // 新增
+              case "add" /* ADD */:
+                  // 如果是不是数组, 触发迭代更新
+                  if (!isArray(target)) {
+                      add(depsMap.get(ITERATE_KEY));
+                  }
+                  // 如果添加数组的下标, 就触发length的更新
+                  else if (isIntegerKey(key)) {
+                      add(depsMap.get('length'));
+                  }
+                  break;
+              // 删除
+              case "delete" /* DELETE */:
+                  // 如果是不是数组, 触发迭代更新
+                  if (!isArray(target)) {
+                      add(depsMap.get(ITERATE_KEY));
+                  }
+                  break;
+              // 修改
+              case "set" /* SET */:
+                  // 如果是Map, 修改操作也要触发迭代的更新
+                  if (isMap(target)) {
+                      add(depsMap.get(ITERATE_KEY));
+                  }
+                  break;
+          }
+      }
+      const run = function (effect) {
+          // 如果存在scheduler调度函数, 则执行调度函数, 调度函数内部可能实行effect, 也可能不执行
+          if (effect.options.scheduler) {
+              console.log('发现effect有调度器, 执行调度器');
+              effect.options.scheduler(effect);
+          }
+          else {
+              console.log('effect没有调度器 执行effect');
+              // 否则直接执行effect
+              effect();
+          }
+      };
+      // 一起执行
+      effects.forEach(run);
+  }
+
+  // 收集Symbol的内置方法, 用于判断某个key是否为Symbol的内置方法
+  const builtInSymbols = new Set(Object.getOwnPropertyNames(Symbol)
+      .map(key => Symbol[key])
+      .filter(isSymbol));
+  // 创建get
+  const get = createGetter();
+  const shallowGet = createGetter(false, true);
+  const readonlyGet = createGetter(true);
+  const shallowReadonlyGet = createGetter(true, true);
+  // 生成Getter
+  function createGetter(isReadonly = false, shallow = false) {
+      return function get(target, key, receiver) {
+          const res = Reflect.get(target, key, receiver);
+          if (!isReadonly) {
+              // 收集依赖, 数据变化后更新视图
+              track(target, "get" /* GET */, key);
+          }
+          if (shallow) {
+              // 浅拦截不需要递归
+              return res;
+          }
+          if (isObject(res)) {
+              // 如果是深拦截且是对象 则递归
+              return isReadonly ? readonly(res) : reactive(res);
+          }
+          return res;
+      };
+  }
+  // 创建set
+  const set = createSetter();
+  const shallowSet = createSetter(true);
+  // 生成Setter
+  function createSetter(shallow = false) {
+      return function set(target, key, value, receiver) {
+          // 获取以前的值
+          const oldValue = target[key];
+          // 1.如果是数组,且改变的是下标, 通过判断key 和 数组lenth比 就可以知道是否存在
+          // 2.否则就是对象, 就判断是否是自身的属性
+          const hadKey = isArray(target) && isIntegerKey(key) ? Number(key) < target.length : hasOwn(target, key);
+          const result = Reflect.set(target, key, value, receiver);
+          // 区分新增还是修改
+          if (!hadKey) {
+              // 没有key就是新增, 
+              trigger(target, "add" /* ADD */, key, value);
+          }
+          else if (hasChanged(oldValue, value)) {
+              // 有key就是修改
+              trigger(target, "set" /* SET */, key, value);
+          }
+          // 数据更新时, 通知对应的属性执行effect
+          return result;
+      };
+  }
+  // 删除deleteProperty
+  function deleteProperty(target, key) {
+      // 判断key是否存在
+      const hasKey = hasOwn(target, key);
+      // 缓存原始值
+      target[key];
+      // 执行删除操作
+      const result = Reflect.deleteProperty(target, key);
+      // 如果删除成功, 且target存在key 则进行trigger, 触发依赖
+      if (result && hasKey) {
+          trigger(target, "delete" /* DELETE */, key, undefined);
+      }
+      return result;
+  }
+  function has(target, key) {
+      const result = Reflect.has(target, key);
+      // 如果不key不是Symbol类型, 或者不是Symbol的内置参数, 则收集依赖
+      if (!isSymbol(key) || !builtInSymbols.has(key)) {
+          track(target, "has" /* HAS */, key);
+      }
+      return result;
+  }
+  function ownKeys(target) {
+      // 如果迭代数组, 用length作为key收集依赖, 其他的用便准迭代key收集
+      track(target, "iterate" /* ITERATE */, isArray(target) ? 'length' : ITERATE_KEY);
+      return Reflect.ownKeys(target);
+  }
+  // 对应reactive的handler参数
+  const mutableHandlers = {
+      get,
+      set,
+      deleteProperty,
+      has,
+      ownKeys
+  };
+  // 对应readonly的handler参数
+  const readonlyHandlers = {
+      get: readonlyGet,
+      set: (target, key) => {
+          console.warn(`Set operation on key "${String(key)}" failed: target is readonly.`, target);
+          return true;
+      },
+      deleteProperty: (target, key) => {
+          console.warn(`Delete operation on key "${String(key)}" failed: target is readonly.`, target);
+          return true;
+      }
+  };
+  // 对应shallowReactive的handler参数
+  const shallowReactiveHandlers = extend({}, mutableHandlers, {
+      get: shallowGet,
+      set: shallowSet
+  });
+  // 对应shallowReadonly的handler参数
+  const shallowReadonlyHandlers = extend({}, readonlyHandlers, {
+      get: shallowReadonlyGet
+  });
+
+  // 自动垃圾回收
+  const reactiveMap = new WeakMap();
+  const readonlyMap = new WeakMap();
+  // new Proxy() 拦截数据的get和set
+  function createReactiveObject(target, isReadonly, baseHandlers) {
+      // reactive只能拦截object
+      if (!isObject(target)) {
+          return target;
+      }
+      // 如果存在缓存,直接返回proxy实例
+      const proxyMap = isReadonly ? readonlyMap : reactiveMap;
+      const exisitProxy = proxyMap.get(target);
+      if (exisitProxy) {
+          return exisitProxy;
+      }
+      // 创建proxy实例, 进行拦截
+      // @TODO baseHandlers还要考虑集合的情况(map, set, weakmap, weakset)
+      const proxy = new Proxy(target, baseHandlers);
+      // 缓存
+      proxyMap.set(target, proxy);
+      return proxy;
+  }
+  function reactive(target) {
+      return createReactiveObject(target, false, mutableHandlers);
+  }
+  function shallowReactive(target) {
+      return createReactiveObject(target, false, shallowReactiveHandlers);
+  }
+  function readonly(target) {
+      return createReactiveObject(target, true, readonlyHandlers);
+  }
+  function shallowReadonly(target) {
+      return createReactiveObject(target, true, shallowReadonlyHandlers);
+  }
+
+  function ref(value) {
+      return createRef(value);
+  }
+  function shallowRef(value) {
+      return createRef(value, true);
+  }
+  // 如果传入对象, 则返回响应式的对象
+  const convert = (value) => isObject(value) ? reactive(value) : value;
+  // ref类
+  class RefImpl {
+      _rawValue;
+      _shallow;
+      _value;
+      __v_isRef = true;
+      constructor(_rawValue, _shallow = false) {
+          this._rawValue = _rawValue;
+          this._shallow = _shallow;
+          console.log('创建ref', _rawValue);
+          // 如果是浅的, 做一次代理就可以, 但是如果是深度的, 要进行深度代理了, 这里就可以用reactive了
+          this._value = _shallow ? _rawValue : convert(_rawValue);
+      }
+      // ref类的属性访问器
+      get value() {
+          console.log('ref, 触发get value 执行track');
+          track(this, "get" /* GET */, 'value');
+          return this._value;
+      }
+      // 通过代理 在实现触发依赖
+      set value(newVal) {
+          // 如果发生了改变
+          if (hasChanged(newVal, this._rawValue)) {
+              console.log('ref, 触发set value 执行trigger', newVal);
+              // 进行赋值
+              this._rawValue = newVal;
+              this._value = newVal;
+              trigger(this, "set" /* SET */, 'value', newVal);
+          }
+      }
+  }
+  function createRef(rawValue, shallow = false) {
+      return new RefImpl(rawValue, shallow);
+  }
+  // toRef实现类
+  class ObjectRefImpl {
+      _object;
+      _key;
+      __v_isRef = true;
+      constructor(_object, _key) {
+          this._object = _object;
+          this._key = _key;
+      }
+      get value() {
+          // 代理, 外界通过访问value, 代理到原始object对应的属性, 这样不就等于触发了原始object的依赖收集, 注意原对象必须是响应式的
+          return this._object[this._key];
+      }
+      set value(newVal) {
+          // 外界改变value, 同样去改变原始object的属性, 这样就触发了依赖
+          this._object[this._key] = newVal;
+      }
+  }
+  // 用来把一个响应式对象的的某个 key 值转换成 ref
+  /*
+   *  const obj = reactive({ foo: 1 }) // obj 是响应式数据
+   *  const obj2 = { foo: obj.foo }*
+   *  effect(() => {
+   *      console.log(obj2.foo) // 这里读取 obj2.foo
+   *  })
+   *  obj.foo = 2  // 设置 obj.foo 显然无效
+   */
+  function toRef(object, key) {
+      return new ObjectRefImpl(object, key);
+  }
+  function toRefs(object, key) {
+      // object 可能是数组或者对象
+      const ret = isArray(object) ? new Array(object.length) : {};
+      for (let key in object) {
+          ret[key] = toRef(object, key);
+      }
+      return ret;
+  }
+  // 这个函数的目的是
+  // 帮助解构 ref
+  // 比如在 template 中使用 ref 的时候，直接使用就可以了
+  // 例如： const count = ref(0) -> 在 template 中使用的话 可以直接 count
+  // 解决方案就是通过 proxy 来对 ref 做处理
+  const shallowUnwrapHandlers = {
+      get(target, key, receiver) {
+          // 如果里面是一个 ref 类型的话，那么就返回 .value
+          // 如果不是的话，那么直接返回value 就可以了
+          return unRef(Reflect.get(target, key, receiver));
+      },
+      set(target, key, value, receiver) {
+          const oldValue = target[key];
+          if (isRef(oldValue) && !isRef(value)) {
+              return (target[key].value = value);
+          }
+          else {
+              return Reflect.set(target, key, value, receiver);
+          }
+      },
+  };
+  // 这里没有处理 objectWithRefs 是 reactive 类型的时候
+  // TODO reactive 里面如果有 ref 类型的 key 的话， 那么也是不需要调用 ref .value 的 
+  // （but 这个逻辑在 reactive 里面没有实现）
+  function proxyRefs(objectWithRefs) {
+      return new Proxy(objectWithRefs, shallowUnwrapHandlers);
+  }
+  // 把 ref 里面的值拿到
+  function unRef(ref) {
+      return isRef(ref) ? ref.value : ref;
+  }
+  function isRef(value) {
+      return !!value.__v_isRef;
+  }
+
+  // computed初始化类
+  class ComputedRefImpl {
+      _setter;
+      // 用于存储getter返回的值
+      _value;
+      // dirty标识, 用于实现惰性, 默认为true, 第一次就执行getter方法
+      _dirty = true;
+      // 用于存贮effect化的getter
+      effect;
+      // ref标识
+      __v_isRef = true;
+      // 只读标识
+      ["__v_isReadonly" /* IS_READONLY */];
+      constructor(getter, _setter, isReadonly) {
+          this._setter = _setter;
+          console.log('创建computed, 生成computed的effect 但不执行');
+          // 把getter进行effct化, effct执行,就会触发依赖收集
+          this.effect = effect(getter, {
+              // 不立即执行
+              lazy: true,
+              // 当属性依赖的值发生变化, 就会执行scheduler, 同时设置dirty状态
+              scheduler: () => {
+                  console.log('computed的effect的调度器scheduler执行');
+                  if (!this._dirty) {
+                      console.log('调度器内 发现dirty为false, 把dirty设置为true, 执行trigger set value');
+                      this._dirty = true;
+                      // 触发computed的value属性更新
+                      trigger(this, "set" /* SET */, 'value');
+                  }
+                  else {
+                      console.log('调度器内 发现dirty为true, 什么都不做');
+                  }
+              }
+          });
+          // 设置只读标记, 阻止computed实例被reactive
+          this["__v_isReadonly" /* IS_READONLY */] = isReadonly;
+      }
+      // 通过代理value, 来对computed进行依赖收集
+      get value() {
+          console.log('触发computed get value');
+          // 如果是dirty的, 就执行getter, 然后改变dirty状态, 就实现了computed的惰性特征
+          if (this._dirty) {
+              console.log('computed的get value dirty为ture, 执行computed的effect, computed的effect执行会收集computed的getter');
+              // 这里_effect就是返回的getter,执行getter, 把gtter返回的结果赋值给value
+              this._value = this.effect();
+              console.log('computed的get value的dirty改为false');
+              this._dirty = false;
+              console.log('computed的get value触发track');
+              // 收集computed的value属性
+              track(this, "get" /* GET */, 'value');
+          }
+          else {
+              console.log('computed的get value dirty为false, 什么都不做 直接返回value');
+          }
+          return this._value;
+      }
+      // 如果对compouted进行set, 则触发设置的setter函数
+      set value(newValue) {
+          this._setter(newValue);
+      }
+  }
+  // computed计算属性
+  function computed(getterOrOptions) {
+      let getter;
+      let setter;
+      // getterOrOptions参数可能是funciton 或者 对象, 根据传入参数的不同, 设置getter ,setter
+      if (isFunction(getterOrOptions)) {
+          getter = getterOrOptions;
+          setter = NOOP;
+      }
+      else {
+          getter = getterOrOptions.get;
+          setter = getterOrOptions.set;
+      }
+      // 返回computed实例, 如果getter是个function, 或者没有传入setter 那么就是只读的
+      return new ComputedRefImpl(getter, setter, isFunction(getterOrOptions) || !getterOrOptions.set);
+  }
+
+  let uid$1 = 0;
   // 返回createApp函数
   function createAppAPI(render) {
       return function createApp(rootComponent, rootProps = null) {
@@ -166,7 +711,7 @@ var VueShared = (function (exports) {
           // mounted标记
           let isMounted = false;
           const app = (context.app = {
-              _uid: uid++,
+              _uid: uid$1++,
               _component: rootComponent,
               _props: rootProps,
               _container: null,
@@ -208,8 +753,275 @@ var VueShared = (function (exports) {
           mixins: [],
           components: {},
           directives: {},
-          provides: Object.create(null)
+          provides: Object.create(null),
+          optionsCache: new WeakMap(),
+          propsCache: new WeakMap(),
+          emitsCache: new WeakMap()
       };
+  }
+
+  function emit(instance, event, ...rawArgs) {
+      // 1. emit 是基于 props 里面的 onXXX 的函数来进行匹配的
+      // 所以我们先从 props 中看看是否有对应的 event handler
+      const props = instance.props;
+      // ex: event -> click 那么这里取的就是 onClick
+      // 让事情变的复杂一点如果是烤肉串命名的话，需要转换成  change-page -> changePage
+      // 需要得到事件名称
+      const handlerName = toHandlerKey(camelize(event));
+      const handler = props[handlerName];
+      if (handler) {
+          handler(...rawArgs);
+      }
+  }
+
+  function initProps(instance, rawProps) {
+      console.log("initProps");
+      // TODO
+      // 应该还有 attrs 的概念
+      // attrs
+      // 如果组件声明了 props 的话，那么才可以进入 props 属性内
+      // 不然的话是需要存储在 attrs 内
+      // 这里暂时直接赋值给 instance.props 即可
+      instance.props = rawProps;
+  }
+
+  const publicPropertiesMap = {
+      // 当用户调用 instance.proxy.$emit 时就会触发这个函数
+      // i 就是 instance 的缩写 也就是组件实例对象
+      $el: (i) => i.vnode.el,
+      $emit: (i) => i.emit,
+      $slots: (i) => i.slots,
+      $props: (i) => i.props,
+  };
+  // 需要让用户可以直接在 render 函数内直接使用 this 来触发 proxy
+  const PublicInstanceProxyHandlers = {
+      get({ _: instance }, key) {
+          // 用户访问 proxy[key]
+          // 这里就匹配一下看看是否有对应的 function
+          // 有的话就直接调用这个 function
+          const { setupState, props } = instance;
+          console.log(`触发 proxy hook , key -> : ${key}`);
+          if (key !== '$') {
+              if (hasOwn(setupState, key)) {
+                  return setupState[key];
+              }
+              else if (hasOwn(props, key)) {
+                  return props[key];
+              }
+          }
+          const publicGetter = publicPropertiesMap[key];
+          if (publicGetter) {
+              return publicGetter[instance];
+          }
+      },
+      set({ _: instance }, key, value) {
+          const { setupState } = instance;
+          if (setupState && hasOwn(setupState, key)) {
+              setupState[key] = value;
+          }
+      }
+  };
+
+  const emptyAppContext = createAppContext();
+  let uid = 0;
+  // 创建组件实例
+  function createComponentInstance(vnode, parent) {
+      const type = vnode.type;
+      const appContext = (parent ? parent.appContext : vnode.appContext) || emptyAppContext;
+      const instance = {
+          uid: uid++,
+          vnode,
+          type,
+          parent,
+          appContext,
+          root: null,
+          next: null,
+          subTree: null,
+          update: null,
+          render: null,
+          proxy: null,
+          provides: parent ? parent.provides : Object.create(appContext.provides),
+          // state
+          ctx: EMPTY_OBJ,
+          data: EMPTY_OBJ,
+          props: EMPTY_OBJ,
+          attrs: EMPTY_OBJ,
+          slots: EMPTY_OBJ,
+          refs: EMPTY_OBJ,
+          setupState: EMPTY_OBJ,
+          setupContext: null,
+          isMounted: false,
+          emit: () => { },
+      };
+      // 在 prod 坏境下的 ctx 只是下面简单的结构
+      // 在 dev 环境下会更复杂
+      instance.ctx = {
+          _: instance
+      };
+      instance.root = parent ? parent.root : instance;
+      // 赋值 emit
+      // 这里使用 bind 把 instance 进行绑定
+      // 后面用户使用的时候只需要给 event 和参数即可
+      instance.emit = emit.bind(null, instance);
+      return instance;
+  }
+  function setupComponent(instance) {
+      // 1. 处理 props
+      // 取出存在 vnode 里面的 props
+      const { props, children } = instance.vnode;
+      initProps(instance, props);
+      // 2. 处理 slots
+      // initSlots(instance, children)
+      // 源码里面有两种类型的 component
+      // 一种是基于 options 创建的
+      // 还有一种是 function 的
+      // 这里处理的是 options 创建的
+      // 叫做 stateful 类型
+      setupStatefulComponent(instance);
+  }
+  function setupStatefulComponent(instance) {
+      // 1. 先创建代理 proxy
+      console.log("创建 proxy");
+      // proxy 对象其实是代理了 instance.ctx 对象
+      // 我们在使用的时候需要使用 instance.proxy 对象
+      // 因为 instance.ctx 在 prod 和 dev 坏境下是不同的
+      instance.proxy = new Proxy(instance.ctx, PublicInstanceProxyHandlers);
+      // 用户声明的对象就是 instance.type
+      // const Component = {setup(),render()} ....
+      const Component = instance.type;
+      // 2. 调用 setup
+      // 调用 setup 的时候传入 props
+      const { setup } = Component;
+      if (setup) {
+          const setupContext = createSetupContext(instance);
+          // 真实的处理场景里面应该是只在 dev 环境才会把 props 设置为只读的
+          const setupResult = setup && setup(shallowReadonly(instance.props), setupContext);
+          // 3. 处理 setupResult
+          handleSetupResult(instance, setupResult);
+      }
+      else {
+          finishComponentSetup(instance);
+      }
+  }
+  function createSetupContext(instance) {
+      console.log("初始化 setup context");
+      return {
+          attrs: instance.attrs,
+          slots: instance.slots,
+          emit: instance.emit,
+          expose: () => { }, // TODO 实现 expose 函数逻辑
+      };
+  }
+  function handleSetupResult(instance, setupResult) {
+      // setup 返回值不一样的话，会有不同的处理
+      // 1. 看看 setupResult 是个什么
+      if (typeof setupResult === "function") {
+          // 如果返回的是 function 的话，那么绑定到 render 上
+          // 认为是 render 逻辑
+          // setup(){ return ()=>(h("div")) }
+          instance.render = setupResult;
+      }
+      else if (typeof setupResult === "object") {
+          // 返回的是一个对象的话
+          // 先存到 setupState 上
+          // 先使用 @vue/reactivity 里面的 proxyRefs
+          // 后面我们自己构建
+          // proxyRefs 的作用就是把 setupResult 对象做一层代理
+          // 方便用户直接访问 ref 类型的值
+          // 比如 setupResult 里面有个 count 是个 ref 类型的对象，用户使用的时候就可以直接使用 count 了，而不需要在 count.value
+          // 这里也就是官网里面说到的自动结构 Ref 类型
+          instance.setupState = proxyRefs(setupResult);
+      }
+      finishComponentSetup(instance);
+  }
+  function finishComponentSetup(instance) {
+      // 给 instance 设置 render
+      // 先取到用户设置的 component options
+      const Component = instance.type;
+      if (!instance.render) {
+          // todo
+          // 调用 compile 模块来编译 template
+          // Component.render = compile(Component.template, {
+          //     isCustomElement: instance.appContext.config.isCustomElement || NO
+          //   })
+          instance.render = Component.render;
+      }
+      // applyOptions()
+  }
+
+  function shouldUpdateComponent(prevVNode, nextVNode) {
+      const { props: prevProps } = prevVNode;
+      const { props: nextProps } = nextVNode;
+      //   const emits = component!.emitsOptions;
+      // 这里主要是检测组件的 props
+      // 核心：只要是 props 发生改变了，那么这个 component 就需要更新
+      // 1. props 没有变化，那么不需要更新
+      if (prevProps === nextProps) {
+          return false;
+      }
+      // 如果之前没有 props，那么就需要看看现在有没有 props 了
+      // 所以这里基于 nextProps 的值来决定是否更新
+      if (!prevProps) {
+          return !!nextProps;
+      }
+      // 之前有值，现在没值，那么肯定需要更新
+      if (!nextProps) {
+          return true;
+      }
+      // 以上都是比较明显的可以知道 props 是否是变化的
+      // 在 hasPropsChanged 会做更细致的对比检测
+      return hasPropsChanged(prevProps, nextProps);
+  }
+  function hasPropsChanged(prevProps, nextProps) {
+      // 依次对比每一个 props.key
+      // 提前对比一下 length ，length 不一致肯定是需要更新的
+      const nextKeys = Object.keys(nextProps);
+      if (nextKeys.length !== Object.keys(prevProps).length) {
+          return true;
+      }
+      // 只要现在的 prop 和之前的 prop 不一样那么就需要更新
+      for (let i = 0; i < nextKeys.length; i++) {
+          const key = nextKeys[i];
+          if (nextProps[key] !== prevProps[key]) {
+              return true;
+          }
+      }
+      return false;
+  }
+
+  const queue = [];
+  const p = Promise.resolve();
+  let isFlushPending = false;
+  function nextTick(fn) {
+      return fn ? p.then(fn) : p;
+  }
+  function queueJob(job) {
+      if (!queue.includes(job)) {
+          queue.push(job);
+          // 执行所有的 job
+          queueFlush();
+      }
+  }
+  function queueFlush() {
+      // 如果同时触发了两个组件的更新的话
+      // 这里就会触发两次 then （微任务逻辑）
+      // 但是着是没有必要的
+      // 我们只需要触发一次即可处理完所有的 job 调用
+      // 所以需要判断一下 如果已经触发过 nextTick 了
+      // 那么后面就不需要再次触发一次 nextTick 逻辑了
+      if (isFlushPending)
+          return;
+      isFlushPending = true;
+      nextTick(flushJobs);
+  }
+  function flushJobs() {
+      isFlushPending = false;
+      let job;
+      while ((job = queue.shift())) {
+          if (job) {
+              job();
+          }
+      }
   }
 
   let renderApi = null;
@@ -360,8 +1172,94 @@ var VueShared = (function (exports) {
           mountComponent(n2, container, anchor, parentComponent);
       }
       else {
-          updateComponent();
+          updateComponent(n1, n2);
       }
+  }
+  // @TODO 更新组件节点
+  function updateComponent(n1, n2, container) {
+      console.log('updateComponent 更新组件');
+      const instance = (n2.component = n1.component);
+      if (shouldUpdateComponent(n1, n2)) {
+          console.log(`组件需要更新: ${instance}`);
+          // 那么 next 就是新的 vnode 了（也就是 n2）
+          instance.next = n2;
+          // 这里的 update 是在 setupRenderEffect 里面初始化的，update 函数除了当内部的响应式对象发生改变的时候会调用
+          // 还可以直接主动的调用(这是属于 effect 的特性)
+          // 调用 update 再次更新调用 patch 逻辑
+          // 在update 中调用的 next 就变成了 n2了
+          // ps：可以详细的看看 update 中 next 的应用
+          // TODO 需要在 update 中处理支持 next 的逻辑
+          instance.update();
+      }
+      else {
+          console.log(`组件不需要更新: ${instance}`);
+          // 不需要更新的话，那么只需要覆盖下面的属性即可
+          n2.component = n1.component;
+          n2.el = n1.el;
+          instance.vnode = n2;
+      }
+  }
+  // 挂载组件节点
+  function mountComponent(initialVNode, container, anchor, parentComponent) {
+      // 如果是组件 type 内必然有render函数
+      // const instance = vnode
+      // instance.$vnode = instance.type.render()
+      // patch(container._vnode, instance.$vnode, container, anchor, parentComponent)
+      // 1. 先创建一个 component instance
+      const instance = (initialVNode.component = createComponentInstance(initialVNode, parentComponent));
+      // 2. 给 instance 加工加工
+      setupComponent(instance);
+      // 3.渲染component的render, 且通过effect触发update
+      setupRenderEffect(instance, initialVNode, anchor, container);
+  }
+  // 渲染组件节点, 设置effect
+  function setupRenderEffect(instance, initialVNode, anchor, container) {
+      function componentUpdateFn() {
+          debugger;
+          // 如果没有挂载过
+          if (!instance.isMounted) {
+              const proxyToUse = instance.proxy;
+              // 通过render生成subTree
+              const subTree = (instance.subTree = instance.render.call(proxyToUse, proxyToUse));
+              patch(null, subTree, container, anchor, instance);
+              initialVNode.el = subTree.el;
+              instance.isMounted = true;
+          }
+          else {
+              const { next, vnode } = instance;
+              if (next) {
+                  next.el = vnode.el;
+                  updateComponentPreRender(instance, next);
+              }
+              const proxyToUse = instance.proxy;
+              const nextTree = instance.render.call(proxyToUse, proxyToUse);
+              // 替换之前的 subTree
+              const prevTree = instance.subTree;
+              instance.subTree = nextTree;
+              // 触发 beforeUpdated hook
+              console.log("beforeUpdated hook");
+              console.log("onVnodeBeforeUpdate hook");
+              // 用旧的 vnode 和新的 vnode 交给 patch 来处理
+              patch(prevTree, nextTree, prevTree.el, anchor, instance);
+              // 触发 updated hook
+              console.log("updated hook");
+              console.log("onVnodeUpdated hook");
+          }
+      }
+      instance.update = effect(componentUpdateFn, {
+          scheduler: () => {
+              // 把 effect 推到微任务的时候在执行
+              // queueJob(effect);
+              queueJob(instance.update);
+          }
+      });
+  }
+  function updateComponentPreRender(instance, nextVNode) {
+      const { props } = nextVNode;
+      console.log("更新组件的 props", props);
+      instance.props = props;
+      // console.log("更新组件的 slots");
+      // TODO 更新组件的 slots
   }
   // 挂载元素节点
   function mountElement(vnode, container, anchor, parentComponent) {
@@ -389,13 +1287,6 @@ var VueShared = (function (exports) {
       }
       // 挂载 这里传入的anchor参数 是为了保证fragment挂载位置正确
       renderApi.hostInsert(el, container, anchor);
-  }
-  // 挂载组件节点
-  function mountComponent(vnode, container, anchor, parentComponent) {
-      // 如果是组件 type 内必然有render函数
-      const instance = vnode;
-      instance.$vnode = instance.type.render();
-      patch(container._vnode, instance.$vnode, container, anchor, parentComponent);
   }
   // 挂载子节点
   function mountChildren(children, container, anchor, parentComponent, start = 0) {
@@ -501,10 +1392,6 @@ var VueShared = (function (exports) {
               }
           }
       }
-  }
-  // @TODO 更新组件节点
-  function updateComponent(n1, n2, container) {
-      console.log('updateComponent 更新组件');
   }
   // 取消挂载
   function unmount(vnode, parentComponent, parentSuspense, doRemove = false) {
@@ -695,7 +1582,6 @@ var VueShared = (function (exports) {
   // }
   // 最长增长子序列的diff算法
   function patchKeyedChildren(c1, c2, container, parentAnchor, parentComponent) {
-      debugger;
       // 比较索引
       let i = 0;
       // 新节点的长度
@@ -842,7 +1728,7 @@ var VueShared = (function (exports) {
               // 获取新节点索引, 以及新节点
               const nextIndex = s2 + i;
               const nextChild = c2[nextIndex];
-              // 设置锚点, 待处理新节点后面的节点索引 小于 新节点长度, 则插到待处理新节点后面的节点之前, 否则就插入到最后
+              // 设置锚点, 待处理新节点后面还有节点,就插在这个节点的前面,否则就插入到最后
               const anchor = nextIndex + 1 < l2 ? c2[nextIndex + 1].el : parentAnchor;
               // 如果新对旧索引值为0, 说明他没有课复用的节点, 需要挂载
               if (newIndexToOldIndexMap[i] === 0) {
@@ -851,6 +1737,7 @@ var VueShared = (function (exports) {
               else if (moved) {
                   // 如果有移动标记, 证明需要移动
                   // 待处理新节点的索引, 和 最长增长子序列 里面存储 旧节点索引不一致, 就移动节点
+                  // j < 0 指 最长增长子序列为空数组 []
                   if (j < 0 || i !== increasingNewIndexSequence[j]) {
                       move(nextChild, container, anchor);
                   }
@@ -1155,11 +2042,21 @@ var VueShared = (function (exports) {
 
   exports.Fragment = Fragment;
   exports.Text = Text;
+  exports.computed = computed;
   exports.createApp = createApp;
   exports.createRenderer = createRenderer;
+  exports.effect = effect;
   exports.h = h;
+  exports.reactive = reactive;
+  exports.readonly = readonly;
+  exports.ref = ref;
   exports.render = render;
   exports.rendererOptions = rendererOptions;
+  exports.shallowReactive = shallowReactive;
+  exports.shallowReadonly = shallowReadonly;
+  exports.shallowRef = shallowRef;
+  exports.toRef = toRef;
+  exports.toRefs = toRefs;
 
   Object.defineProperty(exports, '__esModule', { value: true });
 
