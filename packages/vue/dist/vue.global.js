@@ -891,29 +891,79 @@ var VueShared = (function (exports) {
   // 需要让用户可以直接在 render 函数内直接使用 this 来触发 proxy
   const PublicInstanceProxyHandlers = {
       get({ _: instance }, key) {
-          // 用户访问 proxy[key]
-          // 这里就匹配一下看看是否有对应的 function
-          // 有的话就直接调用这个 function
-          const { setupState, props } = instance;
-          console.log(`触发 proxy hook , key -> : ${key}`);
-          if (key !== '$') {
-              if (hasOwn(setupState, key)) {
+          const { ctx, setupState, data, props, accessCache, type, appContext } = instance;
+          let normalizedProps;
+          if (key[0] !== '$') {
+              const n = accessCache[key];
+              if (n !== undefined) {
+                  switch (n) {
+                      case 0 /* SETUP */:
+                          return setupState[key];
+                      case 1 /* DATA */:
+                          return data[key];
+                      case 3 /* CONTEXT */:
+                          return ctx[key];
+                      case 2 /* PROPS */:
+                          return props[key];
+                      // default: just fallthrough
+                  }
+              }
+              else if (setupState !== EMPTY_OBJ && hasOwn(setupState, key)) {
+                  accessCache[key] = 0 /* SETUP */;
                   return setupState[key];
               }
-              else if (hasOwn(props, key)) {
+              else if (data !== EMPTY_OBJ && hasOwn(data, key)) {
+                  accessCache[key] = 1 /* DATA */;
+                  return data[key];
+              }
+              else if (
+              // only cache other properties when instance has declared (thus stable)
+              // props
+              (normalizedProps = instance.propsOptions[0]) &&
+                  hasOwn(normalizedProps, key)) {
+                  accessCache[key] = 2 /* PROPS */;
                   return props[key];
               }
+              else if (ctx !== EMPTY_OBJ && hasOwn(ctx, key)) {
+                  accessCache[key] = 3 /* CONTEXT */;
+                  return ctx[key];
+              }
+              else ;
           }
+          console.log(`触发 proxy hook , key -> : ${key}`);
           const publicGetter = publicPropertiesMap[key];
           if (publicGetter) {
               return publicGetter[instance];
           }
       },
       set({ _: instance }, key, value) {
-          const { setupState } = instance;
-          if (setupState && hasOwn(setupState, key)) {
+          const { data, setupState, ctx } = instance;
+          if (setupState !== EMPTY_OBJ && hasOwn(setupState, key)) {
               setupState[key] = value;
           }
+          else if (data !== EMPTY_OBJ && hasOwn(data, key)) {
+              data[key] = value;
+          }
+          else if (hasOwn(instance.props, key)) {
+              return false;
+          }
+          if (key[0] === '$' && key.slice(1) in instance) {
+              return false;
+          }
+          else {
+              ctx[key] = value;
+          }
+          return true;
+      },
+      has({ _: { data, setupState, accessCache, ctx, appContext, propsOptions } }, key) {
+          let normalizedProps;
+          return (accessCache[key] !== undefined ||
+              (data !== EMPTY_OBJ && hasOwn(data, key)) ||
+              (setupState !== EMPTY_OBJ && hasOwn(setupState, key)) ||
+              ((normalizedProps = propsOptions[0]) && hasOwn(normalizedProps, key)) ||
+              hasOwn(ctx, key) ||
+              hasOwn(publicPropertiesMap, key) ||
+              hasOwn(appContext.config.globalProperties, key));
       }
   };
 
