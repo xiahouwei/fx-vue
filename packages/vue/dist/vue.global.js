@@ -1196,38 +1196,47 @@ var VueShared = (function (exports) {
       return false;
   }
 
+  // 任务队列
   const queue = [];
-  const p = Promise.resolve();
-  let isFlushPending = false;
+  // 正在执行任务
+  let isFlushing = false;
+  // resolve
+  const resolvedPromise = Promise.resolve();
+  // 当前正在执行的任务
+  let currentFlushPromise = null;
   function nextTick(fn) {
+      // 如果当前正在执行任务, 则等任务执行成功后再执行fn, 否则微任务执行后执行
+      const p = currentFlushPromise || resolvedPromise;
       return fn ? p.then(fn) : p;
   }
   function queueJob(job) {
-      if (!queue.includes(job)) {
+      if (!queue.length || !queue.includes(job)) {
           queue.push(job);
           // 执行所有的 job
           queueFlush();
       }
   }
+  // 执行所有job, 多次调用只执行一次
   function queueFlush() {
-      // 如果同时触发了两个组件的更新的话
-      // 这里就会触发两次 then （微任务逻辑）
-      // 但是着是没有必要的
-      // 我们只需要触发一次即可处理完所有的 job 调用
-      // 所以需要判断一下 如果已经触发过 nextTick 了
-      // 那么后面就不需要再次触发一次 nextTick 逻辑了
-      if (isFlushPending)
-          return;
-      isFlushPending = true;
-      nextTick(flushJobs);
+      if (!isFlushing) {
+          isFlushing = true;
+          // 如果有正在执行的任务, 则设置currentFlushPromise, 用于nextTick使用
+          currentFlushPromise = resolvedPromise.then(flushJobs);
+      }
   }
   function flushJobs() {
-      isFlushPending = false;
-      let job;
-      while ((job = queue.shift())) {
-          if (job) {
+      // 避免用户的逻辑出现问题, 进行try
+      try {
+          for (let i = 0; i < queue.length; i++) {
+              const job = queue[i];
               job();
           }
+      }
+      finally {
+          // 任务执行完 把状态重置
+          isFlushing = false;
+          queue.length = 0;
+          currentFlushPromise = null;
       }
   }
 
@@ -2251,6 +2260,7 @@ var VueShared = (function (exports) {
   exports.createRenderer = createRenderer;
   exports.effect = effect;
   exports.h = h;
+  exports.nextTick = nextTick;
   exports.reactive = reactive;
   exports.readonly = readonly;
   exports.ref = ref;

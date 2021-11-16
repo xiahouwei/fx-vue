@@ -1,4 +1,4 @@
-import { h, Text, Fragment, ref } from "../../node_modules/@fx-vue/vue/dist/vue.esm-bundler.js"
+import { h, Text, Fragment, ref, nextTick } from "../../node_modules/@fx-vue/vue/dist/vue.esm-bundler.js"
 
 export default {
 	name: "App",
@@ -6,6 +6,13 @@ export default {
 		const count = ref(0)
 		const add = () => {
 			count.value++
+			count.value++
+			count.value++
+			count.value++
+			// debugger
+			nextTick(() => {
+				debugger
+			})
 			console.log(count.value)
 		}
 		return {
@@ -15,6 +22,7 @@ export default {
 	},
 
 	render(ctx) {
+		console.log('render')
 		return h(
 			"div",
 			{
@@ -23,7 +31,6 @@ export default {
 					border: '1px solid',
 					fontSize: '14px'
 				},
-				onClick: ctx.add,
 				id: 'foo',
 				checked: '',
 				customer: false
@@ -41,7 +48,10 @@ export default {
 					h('li', null, [
 						h(Text, null, 'hello world'),
 					])
-				])
+				]),
+				h('div', {
+					onClick: ctx.add,
+				}, '点我'),
 			]
 		)
 	}
