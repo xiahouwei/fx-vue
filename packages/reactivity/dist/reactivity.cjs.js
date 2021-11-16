@@ -27,6 +27,11 @@ const isSymbol = (val) => typeof val === 'symbol';
 const isObject = (val) => val !== null && typeof val === 'object';
 const objectToString = Object.prototype.toString;
 const toTypeString = (value) => objectToString.call(value);
+// 通过toString获取原始类型
+const toRawType = (value) => {
+    // extract "RawType" from strings like "[object RawType]"
+    return toTypeString(value).slice(8, -1);
+};
 // 判断是否为字符串类型的正整数, 常用于key
 const isIntegerKey = (key) => isString(key) && key !== 'NaN' && key[0] !== '-' && '' + parseInt(key, 10) === key;
 // 判断是否发生变化
@@ -319,6 +324,27 @@ const shallowReadonlyHandlers = extend({}, readonlyHandlers, {
     get: shallowReadonlyGet
 });
 
+// 过去target类型
+function targetTypeMap(rawType) {
+    switch (rawType) {
+        case 'Object':
+        case 'Array':
+            return 1 /* COMMON */;
+        case 'Map':
+        case 'Set':
+        case 'WeakMap':
+        case 'WeakSet':
+            return 2 /* COLLECTION */;
+        default:
+            return 0 /* INVALID */;
+    }
+}
+function getTargetType(value) {
+    // 如果target 有忽略标记, 或者被冻结, 则属于无效类型, 否则根据原始类型来判断
+    return value["__v_skip" /* SKIP */] || !Object.isExtensible(value)
+        ? 0 /* INVALID */
+        : targetTypeMap(toRawType(value));
+}
 // 自动垃圾回收
 const reactiveMap = new WeakMap();
 const readonlyMap = new WeakMap();
@@ -326,6 +352,11 @@ const readonlyMap = new WeakMap();
 function createReactiveObject(target, isReadonly, baseHandlers) {
     // reactive只能拦截object
     if (!isObject(target)) {
+        return target;
+    }
+    // 只有白名单内的value 类型允许被观测, 有忽略标记, 或者被冻结都不允许观测
+    const targetType = getTargetType(target);
+    if (targetType === 0 /* INVALID */) {
         return target;
     }
     // 如果存在缓存,直接返回proxy实例

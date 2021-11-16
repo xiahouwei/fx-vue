@@ -48,6 +48,11 @@ const isBoolean = (val) => typeof val === 'boolean';
 const isObject = (val) => val !== null && typeof val === 'object';
 const objectToString = Object.prototype.toString;
 const toTypeString = (value) => objectToString.call(value);
+// 通过toString获取原始类型
+const toRawType = (value) => {
+    // extract "RawType" from strings like "[object RawType]"
+    return toTypeString(value).slice(8, -1);
+};
 // 判断是否为字符串类型的正整数, 常用于key
 const isIntegerKey = (key) => isString(key) && key !== 'NaN' && key[0] !== '-' && '' + parseInt(key, 10) === key;
 // 是否为vue关键字
@@ -475,6 +480,27 @@ const shallowReadonlyHandlers = extend({}, readonlyHandlers, {
     get: shallowReadonlyGet
 });
 
+// 过去target类型
+function targetTypeMap(rawType) {
+    switch (rawType) {
+        case 'Object':
+        case 'Array':
+            return 1 /* COMMON */;
+        case 'Map':
+        case 'Set':
+        case 'WeakMap':
+        case 'WeakSet':
+            return 2 /* COLLECTION */;
+        default:
+            return 0 /* INVALID */;
+    }
+}
+function getTargetType(value) {
+    // 如果target 有忽略标记, 或者被冻结, 则属于无效类型, 否则根据原始类型来判断
+    return value["__v_skip" /* SKIP */] || !Object.isExtensible(value)
+        ? 0 /* INVALID */
+        : targetTypeMap(toRawType(value));
+}
 // 自动垃圾回收
 const reactiveMap = new WeakMap();
 const readonlyMap = new WeakMap();
@@ -482,6 +508,11 @@ const readonlyMap = new WeakMap();
 function createReactiveObject(target, isReadonly, baseHandlers) {
     // reactive只能拦截object
     if (!isObject(target)) {
+        return target;
+    }
+    // 只有白名单内的value 类型允许被观测, 有忽略标记, 或者被冻结都不允许观测
+    const targetType = getTargetType(target);
+    if (targetType === 0 /* INVALID */) {
         return target;
     }
     // 如果存在缓存,直接返回proxy实例
@@ -761,6 +792,70 @@ function createAppContext() {
     };
 }
 
+let activeEffectScope;
+const effectScopeStack = [];
+class EffectScope {
+    active = true;
+    effects = [];
+    cleanups = [];
+    parent;
+    scopes;
+    /**
+     * track a child scope's index in its parent's scopes array for optimized
+     * removal
+     */
+    index;
+    constructor(detached = false) {
+        if (!detached && activeEffectScope) {
+            this.parent = activeEffectScope;
+            this.index =
+                (activeEffectScope.scopes || (activeEffectScope.scopes = [])).push(this) - 1;
+        }
+    }
+    run(fn) {
+        if (this.active) {
+            try {
+                this.on();
+                return fn();
+            }
+            finally {
+                this.off();
+            }
+        }
+    }
+    on() {
+        if (this.active) {
+            effectScopeStack.push(this);
+            activeEffectScope = this;
+        }
+    }
+    off() {
+        if (this.active) {
+            effectScopeStack.pop();
+            activeEffectScope = effectScopeStack[effectScopeStack.length - 1];
+        }
+    }
+    stop(fromParent) {
+        if (this.active) {
+            this.effects.forEach(e => e.stop());
+            this.cleanups.forEach(cleanup => cleanup());
+            if (this.scopes) {
+                this.scopes.forEach(e => e.stop(true));
+            }
+            // nested scope, dereference from parent to avoid memory leaks
+            if (this.parent && !fromParent) {
+                // optimized O(1) removal
+                const last = this.parent.scopes.pop();
+                if (last && last !== this) {
+                    this.parent.scopes[this.index] = last;
+                    last.index = this.index;
+                }
+            }
+            this.active = false;
+        }
+    }
+}
+
 function emit(instance, event, ...rawArgs) {
     // 1. emit 是基于 props 里面的 onXXX 的函数来进行匹配的
     // 所以我们先从 props 中看看是否有对应的 event handler
@@ -826,8 +921,10 @@ const PublicInstanceProxyHandlers = {
 const emptyAppContext = createAppContext();
 let uid = 0;
 // 创建组件实例
-function createComponentInstance(vnode, parent) {
+function createComponentInstance(vnode, parent, suspense = null) {
+    // 获取组件type
     const type = vnode.type;
+    // 获取组件上下文
     const appContext = (parent ? parent.appContext : vnode.appContext) || emptyAppContext;
     const instance = {
         uid: uid++,
@@ -839,9 +936,28 @@ function createComponentInstance(vnode, parent) {
         next: null,
         subTree: null,
         update: null,
+        scope: new EffectScope(true /* detached */),
         render: null,
         proxy: null,
+        exposed: null,
+        exposeProxy: null,
+        withProxy: null,
         provides: parent ? parent.provides : Object.create(appContext.provides),
+        accessCache: null,
+        renderCache: [],
+        // local resovled assets
+        components: null,
+        directives: null,
+        // @TODO resolved props and emits options
+        // propsOptions: normalizePropsOptions(type, appContext), // props
+        // emitsOptions: normalizeEmitsOptions(type, appContext), // emits
+        // emit
+        emit: null,
+        emitted: null,
+        // props default value
+        propsDefaults: EMPTY_OBJ,
+        // inheritAttrs
+        inheritAttrs: type.inheritAttrs,
         // state
         ctx: EMPTY_OBJ,
         data: EMPTY_OBJ,
@@ -851,14 +967,38 @@ function createComponentInstance(vnode, parent) {
         refs: EMPTY_OBJ,
         setupState: EMPTY_OBJ,
         setupContext: null,
+        // suspense related
+        suspense,
+        suspenseId: suspense ? suspense.pendingId : 0,
+        asyncDep: null,
+        asyncResolved: false,
+        // lifecycle hooks
+        // not using enums here because it results in computed properties
         isMounted: false,
-        emit: () => { },
+        isUnmounted: false,
+        isDeactivated: false,
+        // 各种钩子
+        bc: null,
+        c: null,
+        bm: null,
+        m: null,
+        bu: null,
+        u: null,
+        um: null,
+        bum: null,
+        da: null,
+        a: null,
+        rtg: null,
+        rtc: null,
+        ec: null,
+        sp: null // SERVER_PREFETCH
     };
     // 在 prod 坏境下的 ctx 只是下面简单的结构
     // 在 dev 环境下会更复杂
     instance.ctx = {
         _: instance
     };
+    // root为实力本身
     instance.root = parent ? parent.root : instance;
     // 赋值 emit
     // 这里使用 bind 把 instance 进行绑定
@@ -866,37 +1006,46 @@ function createComponentInstance(vnode, parent) {
     instance.emit = emit.bind(null, instance);
     return instance;
 }
+function isStatefulComponent(instance) {
+    return instance.vnode.shapeFlag & 4 /* STATEFUL_COMPONENT */;
+}
 function setupComponent(instance) {
     // 1. 处理 props
     // 取出存在 vnode 里面的 props
     const { props, children } = instance.vnode;
+    // 判断是否为状态组件(options为状态组件, function 为非状态组件)
+    const isStateful = isStatefulComponent(instance);
     initProps(instance, props);
-    // 2. 处理 slots
+    // 2. @TODO 处理 slots
     // initSlots(instance, children)
-    // 源码里面有两种类型的 component
-    // 一种是基于 options 创建的
-    // 还有一种是 function 的
-    // 这里处理的是 options 创建的
-    // 叫做 stateful 类型
-    setupStatefulComponent(instance);
+    // 执行setup
+    const setupResult = isStateful ? setupStatefulComponent(instance) : undefined;
+    return setupResult;
 }
 function setupStatefulComponent(instance) {
-    // 1. 先创建代理 proxy
+    // 用户声明的对象就是 instance.type
+    // const Component = {setup(),render()} ....
+    const Component = instance.type;
+    // 0. 设置缓存
+    instance.accessCache = Object.create(null);
+    // 1. 创建代理 proxy
     console.log("创建 proxy");
     // proxy 对象其实是代理了 instance.ctx 对象
     // 我们在使用的时候需要使用 instance.proxy 对象
     // 因为 instance.ctx 在 prod 和 dev 坏境下是不同的
     instance.proxy = new Proxy(instance.ctx, PublicInstanceProxyHandlers);
-    // 用户声明的对象就是 instance.type
-    // const Component = {setup(),render()} ....
-    const Component = instance.type;
     // 2. 调用 setup
     // 调用 setup 的时候传入 props
     const { setup } = Component;
     if (setup) {
+        // 设置当前 currentInstance 的值
+        // 必须要在调用 setup 之前
+        setCurrentInstance(instance);
         const setupContext = createSetupContext(instance);
         // 真实的处理场景里面应该是只在 dev 环境才会把 props 设置为只读的
         const setupResult = setup && setup(shallowReadonly(instance.props), setupContext);
+        // 取消currentInstance的值
+        unsetCurrentInstance();
         // 3. 处理 setupResult
         handleSetupResult(instance, setupResult);
     }
@@ -910,7 +1059,7 @@ function createSetupContext(instance) {
         attrs: instance.attrs,
         slots: instance.slots,
         emit: instance.emit,
-        expose: () => { }, // TODO 实现 expose 函数逻辑
+        expose: () => { }, // TODO 实现 expose 函数逻辑  组件暴露的对象
     };
 }
 function handleSetupResult(instance, setupResult) {
@@ -949,6 +1098,14 @@ function finishComponentSetup(instance) {
     }
     // applyOptions()
 }
+let currentInstance = {};
+function setCurrentInstance(instance) {
+    currentInstance = instance;
+}
+const unsetCurrentInstance = () => {
+    currentInstance && currentInstance.scope.off();
+    currentInstance = null;
+};
 
 function shouldUpdateComponent(prevVNode, nextVNode) {
     const { props: prevProps } = prevVNode;
@@ -1170,13 +1327,15 @@ function processFragment(n1, n2, container, anchor, parentComponent) {
 function processComponent(n1, n2, container, anchor, parentComponent) {
     console.log('processComponent 处理组件节点');
     if (n1 == null) {
+        // 挂载组件
         mountComponent(n2, container, anchor, parentComponent);
     }
     else {
+        // 更新组件
         updateComponent(n1, n2);
     }
 }
-// @TODO 更新组件节点
+// 更新组件节点
 function updateComponent(n1, n2, container) {
     console.log('updateComponent 更新组件');
     const instance = (n2.component = n1.component);
@@ -1202,10 +1361,6 @@ function updateComponent(n1, n2, container) {
 }
 // 挂载组件节点
 function mountComponent(initialVNode, container, anchor, parentComponent) {
-    // 如果是组件 type 内必然有render函数
-    // const instance = vnode
-    // instance.$vnode = instance.type.render()
-    // patch(container._vnode, instance.$vnode, container, anchor, parentComponent)
     // 1. 先创建一个 component instance
     const instance = (initialVNode.component = createComponentInstance(initialVNode, parentComponent));
     // 2. 给 instance 加工加工
@@ -1216,7 +1371,6 @@ function mountComponent(initialVNode, container, anchor, parentComponent) {
 // 渲染组件节点, 设置effect
 function setupRenderEffect(instance, initialVNode, anchor, container) {
     function componentUpdateFn() {
-        debugger;
         // 如果没有挂载过
         if (!instance.isMounted) {
             const proxyToUse = instance.proxy;

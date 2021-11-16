@@ -166,13 +166,15 @@ function processFragment(n1, n2, container, anchor, parentComponent) {
 function processComponent(n1, n2, container, anchor, parentComponent) {
 	console.log('processComponent 处理组件节点')
 	if (n1 == null) {
+		// 挂载组件
 		mountComponent(n2, container, anchor, parentComponent)
 	} else {
+		// 更新组件
 		updateComponent(n1, n2, container)
 	}
 }
 
-// @TODO 更新组件节点
+// 更新组件节点
 function updateComponent(n1, n2, container) {
 	console.log('updateComponent 更新组件')
 	const instance = (n2.component = n1.component);
@@ -198,11 +200,6 @@ function updateComponent(n1, n2, container) {
 
 // 挂载组件节点
 function mountComponent(initialVNode, container, anchor, parentComponent) {
-	// 如果是组件 type 内必然有render函数
-	// const instance = vnode
-	// instance.$vnode = instance.type.render()
-	// patch(container._vnode, instance.$vnode, container, anchor, parentComponent)
-
 	// 1. 先创建一个 component instance
     const instance = (initialVNode.component = createComponentInstance(
 		initialVNode,
@@ -219,7 +216,6 @@ function mountComponent(initialVNode, container, anchor, parentComponent) {
 // 渲染组件节点, 设置effect
 function setupRenderEffect (instance, initialVNode, anchor, container) {
 	function componentUpdateFn () {
-		debugger
 		// 如果没有挂载过
 		if (!instance.isMounted) {
 			const proxyToUse = instance.proxy
