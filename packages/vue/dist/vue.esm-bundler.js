@@ -756,9 +756,9 @@ function createAppAPI(render) {
                     isMounted = true;
                     // 设置容器
                     app._container = rootContainer;
-                    // 
+                    // 赋值app
                     rootContainer.__vue_app__ = app;
-                    // return vnode.component.proxy
+                    return vnode.component && vnode.component.proxy;
                 }
             }
         });
@@ -2250,5 +2250,9 @@ function normalizeContainer(container) {
     return container;
 }
 
-export { Fragment, Text, computed, createApp, createRenderer, effect, h, nextTick, reactive, readonly, ref, render, rendererOptions, shallowReactive, shallowReadonly, shallowRef, toRef, toRefs };
+const a = function () {
+    console.log('我是a');
+};
+
+export { Fragment, Text, a, computed, createApp, createRenderer, effect, h, nextTick, reactive, readonly, ref, render, rendererOptions, shallowReactive, shallowReadonly, shallowRef, toRef, toRefs };
 //# sourceMappingURL=vue.esm-bundler.js.map

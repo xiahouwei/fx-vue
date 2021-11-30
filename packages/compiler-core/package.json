@@ -1,0 +1,16 @@
+{
+  "name": "@fx-vue/compiler-core",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "module": "dist/compiler-core.esm-bundler.js",
+  "author": "",
+  "license": "MIT",
+  "buildOptions": {
+    "name": "VueCompilerCore",
+    "formats": [
+      "esm-bundler",
+      "cjs"
+    ]
+  }
+}

@@ -759,9 +759,9 @@ var VueShared = (function (exports) {
                       isMounted = true;
                       // 设置容器
                       app._container = rootContainer;
-                      // 
+                      // 赋值app
                       rootContainer.__vue_app__ = app;
-                      // return vnode.component.proxy
+                      return vnode.component && vnode.component.proxy;
                   }
               }
           });
@@ -2253,8 +2253,13 @@ var VueShared = (function (exports) {
       return container;
   }
 
+  const a = function () {
+      console.log('我是a');
+  };
+
   exports.Fragment = Fragment;
   exports.Text = Text;
+  exports.a = a;
   exports.computed = computed;
   exports.createApp = createApp;
   exports.createRenderer = createRenderer;

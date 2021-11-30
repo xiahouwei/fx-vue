@@ -760,9 +760,9 @@ function createAppAPI(render) {
                     isMounted = true;
                     // 设置容器
                     app._container = rootContainer;
-                    // 
+                    // 赋值app
                     rootContainer.__vue_app__ = app;
-                    // return vnode.component.proxy
+                    return vnode.component && vnode.component.proxy;
                 }
             }
         });
@@ -2254,8 +2254,13 @@ function normalizeContainer(container) {
     return container;
 }
 
+const a = function () {
+    console.log('我是a');
+};
+
 exports.Fragment = Fragment;
 exports.Text = Text;
+exports.a = a;
 exports.computed = computed;
 exports.createApp = createApp;
 exports.createRenderer = createRenderer;

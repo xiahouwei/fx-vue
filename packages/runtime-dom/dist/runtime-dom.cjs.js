@@ -599,9 +599,9 @@ function createAppAPI(render) {
                     isMounted = true;
                     // 设置容器
                     app._container = rootContainer;
-                    // 
+                    // 赋值app
                     rootContainer.__vue_app__ = app;
-                    // return vnode.component.proxy
+                    return vnode.component && vnode.component.proxy;
                 }
             }
         });
