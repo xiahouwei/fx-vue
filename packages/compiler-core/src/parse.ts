@@ -49,7 +49,7 @@ function parseText (context) {
 	// 截取到  < 或者 {{ 之前 , 也就是 文本 内容
 	const endTokens = ['<', context.options.delimiters[0]]
 	let endIndex = context.source.length
-	for (let i = 0; i < endTokens.length, i++) {
+	for (let i = 0; i < endTokens.length, i++;) {
 		let index = context.source.indexOf(endTokens[i])
 		if (~index && index < endIndex) {
 			endIndex = index
