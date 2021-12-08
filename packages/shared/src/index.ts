@@ -2,6 +2,7 @@ import { makeMap } from './makeMap'
 export { makeMap }
 export * from './patchFlags'
 export * from './shapeFlags'
+export * from './domTagConfig'
 
 // 空对象
 export const EMPTY_OBJ = Object.freeze({})
